@@ -1,0 +1,12 @@
+{
+  "name": "sounddrop-functions",
+  "description": "SounDrop 通報モデレーション Cloud Functions（雛形）",
+  "engines": { "node": "20" },
+  "main": "index.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "stripe": "^16.0.0"
+  },
+  "private": true
+}

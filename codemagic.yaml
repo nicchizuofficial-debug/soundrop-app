@@ -1,0 +1,48 @@
+# Codemagic で iOS をビルドして TestFlight へ配信する設定（Mac 不要）。
+# 使い方は docs/ios_codemagic.md を参照。
+#
+# 前提:
+#  - Codemagic に「App Store Connect API キー」を登録し、その名前を
+#    下の integrations.app_store_connect に合わせる（既定: SounDrop_ASC_Key）。
+#  - App Store Connect でアプリ（Bundle ID: com.nicchizu.soundDrop）を作成済み。
+#  - 署名は自動（automatic）。証明書・プロビジョニングは API キーから自動取得。
+
+workflows:
+  ios-beta:
+    name: SounDrop iOS β (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: SounDrop_ASC_Key   # ← Codemagic で登録したAPIキーの名前
+    environment:
+      ios_signing:
+        distribution_type: app_store          # TestFlight/App Store 配布署名
+        bundle_identifier: com.nicchizu.soundDrop
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Flutter パッケージ取得
+        script: flutter pub get
+      - name: CocoaPods インストール
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: 署名プロファイルを Xcode に適用
+        script: xcode-project use-profiles
+      - name: IPA ビルド（β: 課金オフ・Firebase 有効・MapTiler 本番タイル）
+        script: |
+          flutter build ipa --release \
+            --dart-define=USE_FIREBASE=true \
+            --dart-define=ENABLE_PURCHASES=false \
+            --dart-define=MAPTILER_KEY=JmhDlC3XR4JapoU3OpNS \
+            --build-name=1.0.0 \
+            --build-number=$BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true            # 自動で TestFlight に提出
+        # 審査提出まで自動化したい場合は下を有効化（最初は手動が安全）:
+        # submit_to_app_store: false

@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SounDrop デモ</title>
+<!-- 無料の地図: Leaflet + OpenStreetMap（APIキー不要） -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --bg:#1D2A4C; --surface:#232C56; --elevated:#2C376B; --pink:#F2A8CF; --blue:#8FB4E8; --text:#EAEEFB; --muted:#9aa6cf; }
+  * { box-sizing: border-box; font-family: -apple-system, "Segoe UI", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif; }
+  body { margin:0; background:#0e1430; display:flex; justify-content:center; color:var(--text); }
+  .phone { width:100%; max-width:430px; min-height:100vh; background:var(--bg); position:relative; overflow:hidden; box-shadow:0 0 24px rgba(0,0,0,.4); }
+  .grad-text { background:linear-gradient(120deg,var(--pink),var(--blue)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  header { background:var(--bg); color:var(--text); padding:14px 16px; display:flex; align-items:center; gap:12px; border-bottom:1px solid rgba(255,255,255,.06); }
+  header h1 { font-size:18px; margin:0; flex:1; font-weight:700; }
+  header .chip { background:rgba(255,255,255,.08); padding:4px 10px; border-radius:20px; font-size:14px; }
+  header button.icon { background:none; border:none; color:var(--text); font-size:20px; cursor:pointer; }
+  .hint { font-size:12px; color:var(--muted); padding:8px 16px; }
+  /* map (Leaflet + OSM) */
+  /* z-index:0 で Leaflet 内部(z 600〜1000)を封じ込め、シート等が前面に出るように */
+  #mapwrap { position:relative; margin:8px 16px; height:360px; z-index:0; }
+  #map { height:100%; border-radius:16px; border:1px solid rgba(255,255,255,.08); }
+  .leaflet-container { background:#1c2552; }
+  .pinmark { text-align:center; cursor:pointer; }
+  .pinmark small { display:block; transform:translateY(-6px); font-size:9px; color:#1D2A4C; background:linear-gradient(120deg,var(--pink),var(--blue)); border-radius:6px; padding:0 4px; box-shadow:0 1px 3px rgba(0,0,0,.4); white-space:nowrap; font-weight:600; }
+  .medot { width:18px; height:18px; border-radius:50%; background:#5b8def; border:3px solid #fff; box-shadow:0 0 0 2px rgba(91,141,239,.4); }
+  /* actions */
+  .actions { display:flex; gap:10px; padding:0 16px 16px; }
+  .actions button { flex:1; border:none; border-radius:12px; padding:14px; font-size:15px; cursor:pointer; }
+  .btn-primary { background:linear-gradient(120deg,var(--pink),var(--blue)); color:#1D2A4C; font-weight:700; }
+  .btn-tonal { background:var(--elevated); color:var(--text); }
+  /* list */
+  #list { display:none; padding:8px 16px 24px; }
+  .tile { background:var(--surface); border-radius:12px; padding:12px 14px; margin-bottom:10px; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+  .tile h3 { margin:0 0 4px; font-size:15px; }
+  .tile .meta { font-size:12px; color:var(--muted); }
+  .tile .row { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .tile button { border:none; border-radius:8px; padding:6px 10px; font-size:13px; cursor:pointer; }
+  .tag { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 9px; border-radius:20px; }
+  .tag::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+  .tag.locked{ color:#9aa3e0; background:rgba(154,163,224,.16); }
+  .tag.unlocked{ color:#46c7b8; background:rgba(70,199,184,.16); }
+  .tag.pending{ color:#f0b259; background:rgba(240,178,89,.16); }
+  /* sheet */
+  .scrim { position:absolute; inset:0; background:rgba(0,0,0,.55); display:none; align-items:flex-end; z-index:10; }
+  .sheet { background:var(--surface); color:var(--text); width:100%; border-radius:18px 18px 0 0; padding:18px 18px 26px; animation:up .2s ease; max-height:88vh; overflow-y:auto; }
+  .sheethdr { display:flex; align-items:center; gap:8px; margin:-4px 0 8px; }
+  .backbtn { background:var(--elevated); color:var(--text); border:none; border-radius:20px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  @keyframes up { from{transform:translateY(100%);} to{transform:translateY(0);} }
+  .sheet h2 { font-size:16px; margin:0 0 4px; text-align:center; }
+  .sheet p.sub { font-size:12px; color:var(--muted); text-align:center; margin:0 0 14px; }
+  .sheet button.full { width:100%; border:none; border-radius:12px; padding:13px; font-size:15px; margin-top:10px; cursor:pointer; }
+  .sheet .danger { background:none; border:1px solid #e5557a; color:#e5557a; }
+  .player { display:flex; flex-direction:column; align-items:center; gap:10px; margin:8px 0 16px; }
+  .player .play { width:54px; height:54px; border-radius:50%; border:none; background:linear-gradient(120deg,var(--pink),var(--blue)); color:#1D2A4C; font-size:22px; cursor:pointer; }
+  .bar { width:100%; height:6px; background:rgba(255,255,255,.1); border-radius:3px; overflow:hidden; }
+  .bar > div { height:100%; width:0; background:linear-gradient(120deg,var(--pink),var(--blue)); }
+  .lockopts, .tipopts { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin:6px 0 4px; }
+  .chip-sel { border:1px solid var(--blue); color:var(--text); background:transparent; border-radius:20px; padding:6px 12px; font-size:13px; cursor:pointer; }
+  .chip-sel.on { background:linear-gradient(120deg,var(--pink),var(--blue)); color:#1D2A4C; border-color:transparent; font-weight:600; }
+  .rec { text-align:center; margin:10px 0; }
+  .rec .mic { width:64px; height:64px; border-radius:50%; border:none; font-size:26px; cursor:pointer; background:var(--elevated); color:var(--text); }
+  .rec .mic.recording { background:#e5557a; color:#fff; }
+  .wave { height:48px; display:flex; align-items:center; justify-content:center; gap:2px; margin:8px 0; }
+  .wave span { width:3px; background:linear-gradient(var(--pink),var(--blue)); border-radius:2px; }
+  .miniwave { height:40px; display:flex; align-items:center; gap:2px; margin:6px 0 10px; }
+  .miniwave span { flex:1; background:linear-gradient(var(--pink),var(--blue)); border-radius:2px; min-height:4px; }
+  input.title { width:100%; padding:10px; border:1px solid rgba(255,255,255,.15); background:var(--bg); color:var(--text); border-radius:8px; font-size:14px; margin:8px 0; }
+  .logo { width:28px; height:28px; flex:none; border-radius:7px; object-fit:cover; }
+  .toast { position:absolute; bottom:90px; left:50%; transform:translateX(-50%); background:#0e1430; color:var(--text); border:1px solid rgba(255,255,255,.12);
+           padding:10px 16px; border-radius:8px; font-size:13px; opacity:0; transition:.3s; z-index:20; white-space:nowrap; }
+  .toast.show { opacity:1; }
+  /* auth gate */
+  .auth { position:absolute; inset:0; background:var(--bg); z-index:40; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:28px; gap:12px; }
+  .auth h2 { margin:0; font-size:22px; }
+  .auth p.sub { margin:0; font-size:12px; color:var(--muted); }
+  .auth input { width:100%; max-width:300px; padding:11px; border-radius:8px; border:1px solid rgba(255,255,255,.15); background:var(--bg); color:var(--text); font-size:14px; }
+  .auth button { width:100%; max-width:300px; padding:12px; border:none; border-radius:10px; cursor:pointer; }
+  .empty { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; z-index:1000; }
+  /* settings */
+  .slabel { color:var(--pink); font-size:12px; font-weight:700; margin:16px 4px 6px; letter-spacing:.04em; }
+  .sgroup { background:var(--bg); border:1px solid rgba(255,255,255,.07); border-radius:14px; overflow:hidden; }
+  .srow { display:flex; align-items:center; gap:12px; padding:13px 14px; border-top:1px solid rgba(255,255,255,.06); cursor:pointer; }
+  .srow:first-child { border-top:none; }
+  .srow .ico { width:30px; height:30px; border-radius:9px; background:rgba(143,180,232,.14); display:flex; align-items:center; justify-content:center; flex:none; }
+  .srow .txt { flex:1; min-width:0; }
+  .srow .txt b { font-weight:600; font-size:14px; }
+  .srow .txt small { display:block; color:var(--muted); font-size:11px; margin-top:1px; }
+  .srow .chev { color:var(--muted); }
+  .srow .badge { background:var(--elevated); border-radius:20px; padding:2px 9px; font-size:11px; color:var(--muted); }
+  .srow.sel { } .srow .check { color:var(--blue); font-weight:700; }
+  .sw { position:relative; width:44px; height:26px; flex:none; }
+  .sw input { opacity:0; width:0; height:0; }
+  .sw i { position:absolute; inset:0; background:var(--elevated); border-radius:20px; transition:.2s; }
+  .sw i::before { content:''; position:absolute; width:20px; height:20px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; }
+  .sw input:checked + i { background:linear-gradient(120deg,var(--pink),var(--blue)); }
+  .sw input:checked + i::before { transform:translateX(18px); }
+  .empty > div { pointer-events:auto; background:rgba(35,44,86,.95); border-radius:16px; padding:20px; text-align:center; max-width:320px; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- 他のSVGアイコンが参照する #brand グラデ定義（非表示で常駐） -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F2A8CF"/><stop offset="1" stop-color="#8FB4E8"/>
+    </linearGradient>
+  </defs></svg>
+  <header>
+    <img class="logo" src="../assets/icon/app_icon_custom.png" alt="SounDrop" />
+    <h1 class="grad-text">SounDrop</h1>
+    <span class="chip" id="ticketChip"><span id="tickets">2</span></span>
+    <button class="icon" id="accountsBtn" title="アカウントを探す"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="url(#brand)" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19 a5.5 5.5 0 0 1 11 0 M17 8 h4 M19 6 v4"/></svg></button>
+    <button class="icon" id="profileBtn" title="プロフィール / ログアウト"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="url(#brand)" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18.5 a6 6 0 0 1 11 0" stroke-linecap="round"/></svg></button>
+    <button class="icon" id="toggleList" title="一覧">☰</button>
+  </header>
+
+  <p class="hint" id="hint"><svg width="13" height="17" viewBox="0 0 24 30" style="vertical-align:-3px;margin-right:3px"><path d="M12 29 C5 21 2 16 2 10 a10 10 0 0 1 20 0 C22 16 19 21 12 29 z" fill="url(#brand)"/><circle cx="12" cy="10" r="3.6" fill="#1D2A4C"/></svg>地図をタップして自分の位置を移動 → ピンに近づくと(50m以内)鍵が開きます。遠いピンはワープで解禁。</p>
+
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div class="empty" id="empty" style="display:none"><div>
+      <div style="font-weight:700;margin-bottom:6px;white-space:nowrap">フォロー中のドロップがありません</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px">アカウントをフォローすると、その人の公開ドロップが地図に出ます。</div>
+      <button class="btn-primary" style="border:none;border-radius:10px;padding:10px 16px;cursor:pointer" onclick="accountsSheet()">アカウントを探す</button>
+    </div></div>
+  </div>
+
+  <div class="actions" id="actions">
+    <button class="btn-tonal" id="resetBtn">↺ デモをリセット</button>
+    <button class="btn-primary" id="dropBtn">🎙 ドロップ</button>
+  </div>
+
+  <div id="list"></div>
+
+  <div class="toast" id="toast"></div>
+  <div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
+
+  <!-- 認証ゲート（必須）：初回=新規登録 / 登録後=ログイン -->
+  <div class="auth" id="authGate">
+    <img src="../assets/icon/app_icon_custom.png" alt="SounDrop" width="96" height="96" style="border-radius:20px" />
+    <div id="authBody" style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%"></div>
+  </div>
+</div>
+
+<script>
+// ---- アイコン（SVG・ブランドグラデ） ----
+// 絵文字をやめ、Flutter版(GradientIcon)に合わせたSVGアイコンに統一。
+function ic(name, size = 22) {
+  const P = {
+    bolt: '<path fill="url(#brand)" stroke="none" d="M13 2 L4 14 h6 l-1 8 9-12 h-6 z"/>',
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11 V7 a4 4 0 0 1 8 0 v4"/>',
+    wave: '<path d="M3 12 h2 M8 7 v10 M12 4 v16 M16 7 v10 M19 12 h2"/>',
+    support: '<path fill="url(#brand)" stroke="none" d="M12 21 C12 21 4 13.8 4 8.6 A4.4 4.4 0 0 1 12 6 A4.4 4.4 0 0 1 20 8.6 C20 13.8 12 21 12 21 z"/>',
+    near: '<path fill="url(#brand)" stroke="none" d="M3 11 L21 3 L13 21 L11 13 z"/>',
+    star: '<path fill="url(#brand)" stroke="none" d="M12 2.5 l2.7 5.9 6.3 .6 -4.8 4.2 1.5 6.3 -5.7-3.4 -5.7 3.4 1.5-6.3 -4.8-4.2 6.3-.6 z"/>',
+    spark: '<path fill="url(#brand)" stroke="none" d="M12 2 C12.6 8 16 11.4 22 12 C16 12.6 12.6 16 12 22 C11.4 16 8 12.6 2 12 C8 11.4 11.4 8 12 2 z"/>',
+  };
+  const filled = ['bolt','support','near','star','spark'].includes(name);
+  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${filled ? 'url(#brand)' : 'none'}" stroke="url(#brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle">${P[name]}</svg>`;
+}
+// 地図ピン（ティアドロップ＝ブランドグラデ／内側に状態グリフ）。
+// 状態は内側グリフの色と形で表現（赤は使わず統一感のある配色）。
+function pinSvg(kind) {
+  const GC = { locked: '#6B72C9', unlocked: '#2BB3A3', pending: '#E0922B' };
+  const c = GC[kind];
+  const glyph = {
+    // 鍵（南京錠）
+    locked: '<g fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round"><rect x="15" y="15" width="10" height="7.5" rx="1.6"/><path d="M16.6 15 v-2.2 a3.4 3.4 0 0 1 6.8 0 V15"/></g>',
+    // イコライザ（解禁=音声）
+    unlocked: '<g stroke="' + c + '" stroke-width="2.3" stroke-linecap="round"><path d="M15.5 12 v6 M19 9.5 v11 M22.5 11.5 v7 M26 13.5 v3"/></g>',
+    // 時計（公開待ち）
+    pending: '<g fill="none" stroke="' + c + '" stroke-width="2.2" stroke-linecap="round"><circle cx="20" cy="15" r="6"/><path d="M20 15 V11 M20 15 L23 16.5"/></g>',
+  }[kind];
+  return `<svg width="40" height="50" viewBox="0 0 40 50">
+    <defs><filter id="ds" x="-30%" y="-20%" width="160%" height="150%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#000" flood-opacity="0.35"/></filter></defs>
+    <path filter="url(#ds)" d="M20 47 C8 35 4 27 4 17 a16 16 0 0 1 32 0 C36 27 32 35 20 47 z"
+      fill="url(#brand)" stroke="#ffffff" stroke-width="1.6"/>
+    <circle cx="20" cy="15" r="10.5" fill="#fff"/>${glyph}</svg>`;
+}
+
+// ---- 緯度経度 ⇄ ピクセル変換（仙台駅周辺の固定ボックス） ----
+const BOX = { latMax:38.2670, latMin:38.2545, lngMin:140.8760, lngMax:140.8895 };
+const MAP_W = 0, MAP_H = 0; // 実寸は描画時に取得
+function toXY(lat, lng) {
+  const el = document.getElementById('map');
+  const w = el.clientWidth, h = el.clientHeight;
+  const x = (lng - BOX.lngMin) / (BOX.lngMax - BOX.lngMin) * w;
+  const y = (BOX.latMax - lat) / (BOX.latMax - BOX.latMin) * h;
+  return { x, y };
+}
+function toLatLng(x, y) {
+  const el = document.getElementById('map');
+  const w = el.clientWidth, h = el.clientHeight;
+  const lng = BOX.lngMin + (x / w) * (BOX.lngMax - BOX.lngMin);
+  const lat = BOX.latMax - (y / h) * (BOX.latMax - BOX.latMin);
+  return { lat, lng };
+}
+// ---- Haversine 距離(m) ----
+function dist(aLat,aLng,bLat,bLng){
+  const R=6371000, toR=d=>d*Math.PI/180;
+  const dLat=toR(bLat-aLat), dLng=toR(bLng-aLng);
+  const s=Math.sin(dLat/2)**2+Math.cos(toR(aLat))*Math.cos(toR(bLat))*Math.sin(dLng/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+// 地図上での50mの見かけ半径(px)
+function radiusPx(){
+  const el=document.getElementById('map');
+  const metersPerLng = dist(38.26,BOX.lngMin,38.26,BOX.lngMax); // 横幅の実距離
+  return 50 / metersPerLng * el.clientWidth;
+}
+
+// ---- 状態 ----
+const UNLOCK_M = 50;
+let tickets = 2;
+let blockedAuthors = new Set();
+let reportedPins = new Set();
+let savedPins = new Set();
+let followed = new Set();      // フォロー中の投稿者名
+let currentUser = null;        // 登録ユーザー（表示名）
+let privacy = { visibility:'followers', findUser:true, findEmail:false, precision:'exact', protected:false };
+let myProfile = { name:'', username:'', bio:'' };
+// アカウント名簿（投稿者名 → プロフィール）。followsBack=相互判定用シード。
+const accountMeta = {
+  'けんた': { username:'kenta', bio:'街の音を集めてます。駅前のドロップ多め。', followers:128, followsBack:true },
+  'みさき': { username:'misaki', bio:'ひみつの声をそっと置いていきます🤫', followers:342, followsBack:false },
+  'ゆうと': { username:'yuto', bio:'待ち合わせと時間差ドロップの達人。', followers:57, followsBack:true },
+};
+const followerCount = a => (accountMeta[a]?.followers||0) + (followed.has(a)?1:0);
+const isMutual = a => followed.has(a) && !!accountMeta[a]?.followsBack;
+let me = { lat:38.2601, lng:140.8826 }; // 駅前付近スタート
+let pins = [];
+function seed(){
+  const now = Date.now();
+  pins = [
+    { id:'p1', author:'けんた', title:'駅前で見つけた最高の場所', lat:38.2601, lng:140.8824,
+      visibleAt: now-60000, tip:1500, gifts:5, warp:12, unlocked:false, own:false },
+    { id:'p2', author:'みさき', title:'ここだけの内緒話', lat:38.2637, lng:140.8820,
+      visibleAt: now-7200000, tip:300, gifts:1, warp:3, unlocked:false, own:false },
+    { id:'p3', author:'ゆうと', title:'3時間後に会おう', lat:38.2590, lng:140.8850,
+      visibleAt: now+10800000, tip:0, gifts:0, warp:0, unlocked:false, own:false },
+  ];
+}
+seed();
+
+// ---- 判定ロジック ----
+const now = ()=>Date.now();
+const isVisible = p => now() >= p.visibleAt || p.own;
+const passesSafety = p => p.own || (!blockedAuthors.has(p.author) && !reportedPins.has(p.id));
+// フォロー中の投稿者 or 自分のドロップのみフィードに出す。
+const inFeed = p => p.own || followed.has(p.author);
+const showItem = p => inFeed(p) && isVisible(p) && passesSafety(p);
+const distTo = p => dist(me.lat,me.lng,p.lat,p.lng);
+const inRange = p => distTo(p) <= UNLOCK_M;
+const canPlay = p => p.unlocked || inRange(p);
+
+// ---- 描画 ----
+function render(){
+  document.getElementById('tickets').textContent = tickets;
+  document.getElementById('ticketChip').innerHTML = ic('bolt',16)+' <span id="tickets">'+tickets+'</span>';
+  // プロフィールボタンに自分のアイコンを表示（設定時）。
+  const pb=document.getElementById('profileBtn');
+  if(pb){ pb.innerHTML = myProfile && myProfile.avatar
+    ? `<img src="${myProfile.avatar}" style="width:24px;height:24px;border-radius:50%;object-fit:cover">`
+    : `<svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="url(#brand)" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="10" r="3"/><path d="M6.5 18.5 a6 6 0 0 1 11 0" stroke-linecap="round"/></svg>`; }
+  const visible = pins.filter(showItem);
+  renderMap(visible);
+  // フォロー先が無い等でフィードが空のとき誘導を表示。
+  document.getElementById('empty').style.display = visible.length? 'none':'flex';
+  renderList();
+}
+
+// ---- Leaflet 地図 ----
+// 本番タイルを使う場合はここに MapTiler のキーを入れる（無ければCARTOにフォールバック）。
+const MAPTILER_KEY = '';
+let lmap, meMarker, meCircle, pinLayer;
+function initMap(){
+  lmap = L.map('map', { zoomControl:true, attributionControl:true })
+          .setView([me.lat, me.lng], 16);
+  // ダーク地図：MapTilerキーがあれば本番用、無ければCARTO（キー不要）にフォールバック。
+  if (MAPTILER_KEY) {
+    L.tileLayer(`https://api.maptiler.com/maps/dataviz-dark/{z}/{x}/{y}.png?key=${MAPTILER_KEY}`,
+      { maxZoom:20, attribution:'© MapTiler © OpenStreetMap' }).addTo(lmap);
+  } else {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      { subdomains:'abcd', maxZoom:20, attribution:'© OpenStreetMap © CARTO' }).addTo(lmap);
+  }
+  meCircle = L.circle([me.lat,me.lng], { radius:UNLOCK_M, color:'#8FB4E8',
+    weight:1, fillColor:'#8FB4E8', fillOpacity:0.12 }).addTo(lmap);
+  meMarker = L.marker([me.lat,me.lng], { draggable:true,
+    icon: L.divIcon({ className:'', html:'<div class="medot"></div>', iconSize:[18,18], iconAnchor:[9,9] }) }).addTo(lmap);
+  meMarker.on('drag', e=>{ const ll=e.target.getLatLng(); me={lat:ll.lat,lng:ll.lng}; meCircle.setLatLng(ll); render(); });
+  // 地図タップで自分の位置を移動。
+  lmap.on('click', e=>{ me={lat:e.latlng.lat,lng:e.latlng.lng}; meMarker.setLatLng(e.latlng); meCircle.setLatLng(e.latlng); render(); });
+  pinLayer = L.layerGroup().addTo(lmap);
+}
+function renderMap(visible){
+  if(!lmap) return;
+  meMarker.setLatLng([me.lat,me.lng]); meCircle.setLatLng([me.lat,me.lng]);
+  pinLayer.clearLayers();
+  visible.forEach(p=>{
+    const pending = p.own && now() < p.visibleAt;
+    const play = canPlay(p);
+    const kind = pending?'pending':(play?'unlocked':'locked');
+    const label = pending ? '公開待ち' : (play?'解禁':Math.round(distTo(p))+'m');
+    const icon = L.divIcon({ className:'',
+      html:`<div class="pinmark">${pinSvg(kind)}<small>${label}</small></div>`,
+      iconSize:[38,52], iconAnchor:[19,46] });
+    L.marker([p.lat,p.lng], { icon }).on('click', ()=>tapPin(p)).addTo(pinLayer);
+  });
+}
+
+// ---- ピンタップ ----
+function tapPin(p){
+  const pending = p.own && now() < p.visibleAt;
+  if(pending){ toast('公開待ちです（'+remain(p)+'）'); return; }
+  if(canPlay(p)){ p.unlocked=true; unlockedSheet(p); }
+  else lockedSheet(p);
+}
+function remain(p){
+  const d=p.visibleAt-now(); if(d<=0)return'まもなく';
+  const h=Math.floor(d/3600000), m=Math.floor(d%3600000/60000), s=Math.floor(d%60000/1000);
+  if(h)return '約'+h+'時間後'; if(m)return '約'+m+'分後'; return '約'+s+'秒後';
+}
+
+// ---- シート ----
+const scrim=document.getElementById('scrim'), sheet=document.getElementById('sheet');
+function openSheet(html){ sheet.innerHTML=html; scrim.style.display='flex'; }
+function closeSheet(){ scrim.style.display='none'; }
+scrim.onclick=e=>{ if(e.target===scrim) closeSheet(); };
+
+function lockedSheet(p){
+  openSheet(`
+    <div style="text-align:center;margin-bottom:6px">${ic('lock',40)}</div>
+    <h2>鍵がかかっています</h2>
+    <p class="sub">現在地から 約${Math.round(distTo(p))}m 先（50m以内で自動解禁）</p>
+    <button class="full btn-tonal" onclick="closeSheet()">歩いて近づく</button>
+    <button class="full btn-primary" onclick="useWarp('${p.id}')">${ic('bolt',18)} ワープチケットで今すぐ解禁（所持 ${tickets}枚）</button>
+  `);
+}
+function useWarp(id){
+  const p=pins.find(x=>x.id===id);
+  if(tickets<=0){ ticketShop(); return; }
+  tickets--; p.unlocked=true; p.warp++;
+  toast('ワープチケットを1枚使って解禁！'); render(); unlockedSheet(p);
+}
+function ticketShop(){
+  openSheet(`
+    <h2>ワープチケットが足りません</h2>
+    ${BETA
+      ? '<p class="sub">現在ワープチケットは購入いただけません（準備中）。50m以内に近づくと解禁できます。<br>7日連続ログインで1枚もらえます。</p>'
+      : '<p class="sub">（デモ：実際はApp内課金で購入）</p><button class="full btn-primary" onclick="buyTickets()">3枚パックを購入（¥320）</button>'}
+  `);
+}
+function buyTickets(){ tickets+=3; toast('3枚購入しました'); render(); closeSheet(); }
+
+// ピンIDから決定的なミニ波形バーを生成（装飾用）。
+function miniwaveBars(seed){
+  let h=0; for(const c of seed) h=(h*31+c.charCodeAt(0))&0x7fffffff;
+  let bars='';
+  for(let i=0;i<36;i++){
+    h=(h*1103515245+12345)&0x7fffffff;
+    const r=(h%1000)/1000;
+    const t=i/35, env=0.5+0.5*(1-Math.abs(2*t-1));
+    const ht=Math.round((0.15+r*0.85*env)*100);
+    bars+=`<span style="height:${ht}%"></span>`;
+  }
+  return bars;
+}
+
+function unlockedSheet(p){
+  render();
+  openSheet(`
+    <h2>${ic('wave',18)} ${p.title}</h2>
+    <p class="sub">by ${p.author}</p>
+    <div class="miniwave">${miniwaveBars(p.id)}</div>
+    <div class="player">
+      <button class="play" id="playBtn">▶</button>
+      <div class="bar"><div id="prog"></div></div>
+    </div>
+    ${BETA?'':`<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);">
+      <span>${ic('support',16)} <b id="tipsum">${p.tip}</b>円 / <span id="giftc">${p.gifts}</span>件の応援</span>
+      <button class="chip-sel" onclick="tipOptions('${p.id}')">${ic('support',16)} 応援を贈る</button>
+    </div>`}
+    <button id="saveBtn" class="full ${savedPins.has(p.id)?'btn-primary':'btn-tonal'}" style="margin-top:14px" onclick="toggleSave('${p.id}')">
+      ${savedPins.has(p.id)?'★ 保存済み（タップで解除）':'☆ このドロップを保存'}
+    </button>
+    ${p.own?'':`<button class="full danger" style="margin-top:10px" onclick="safety('${p.id}')">⚠ 通報 / ブロック</button>`}
+  `);
+  let playing=false, t=null, prog=0;
+  const btn=document.getElementById('playBtn'), bar=document.getElementById('prog');
+  btn.onclick=()=>{
+    if(playing){ clearInterval(t); btn.textContent='▶'; playing=false; return; }
+    playing=true; btn.textContent='⏸';
+    t=setInterval(()=>{ prog+=2; bar.style.width=Math.min(prog,100)+'%';
+      if(prog>=100){ clearInterval(t); btn.textContent='↻'; playing=false; prog=0; } },100);
+  };
+}
+function tipOptions(id){
+  // アイコンは全てブランドグラデで統一（形だけ変える）。
+  const tiers=[[100,'ちいさな拍手','spark'],[300,'いいね！の声援','support'],[500,'最高のサウンドに','star']];
+  openSheet(`
+    <h2>このサウンドに応援を贈る</h2>
+    <div class="tipopts">
+      ${tiers.map(([a,l,n])=>`<button class="full btn-tonal" style="margin-top:8px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="sendTip('${id}',${a})">${ic(n,18)} ${l}　¥${a}</button>`).join('')}
+    </div>
+  `);
+}
+function sendTip(id,amount){
+  const p=pins.find(x=>x.id===id); p.tip+=amount; p.gifts++;
+  toast(amount+'円の応援を贈りました 💜'); render(); unlockedSheet(p);
+}
+
+// ---- ドロップ（録音→タイムロック） ----
+let recTimer=null, recSec=0, waveTimer=null, recDuration=0;
+function dropModal(){
+  openSheet(`
+    <h2>🎙 音声をドロップ</h2>
+    <p class="sub">現在の<svg width="11" height="14" viewBox="0 0 24 30" style="vertical-align:-2px"><path d="M12 29 C5 21 2 16 2 10 a10 10 0 0 1 20 0 C22 16 19 21 12 29 z" fill="url(#brand)"/><circle cx="12" cy="10" r="3.6" fill="#1D2A4C"/></svg>位置にドロップします</p>
+    <div class="wave" id="wave"></div>
+    <div class="rec">
+      <button class="mic" id="micBtn">🎙</button>
+      <div style="font-size:12px;color:#666;margin-top:6px" id="recLabel">タップして録音（最大60秒）</div>
+    </div>
+    <input class="title" id="titleInput" placeholder="タイトル（任意）" />
+    <p class="sub" style="margin:4px 0">公開タイミング（タイムロック）</p>
+    <div class="lockopts" id="lockopts">
+      <button class="chip-sel on" data-ms="10000">10秒後(demo)</button>
+      <button class="chip-sel" data-ms="30000">30秒後</button>
+      <button class="chip-sel" data-ms="10800000">3時間後</button>
+    </div>
+    <button class="full btn-primary" id="doDrop" disabled style="opacity:.5">この場所にドロップ</button>
+  `);
+  let lockMs=10000, recorded=false;
+  document.querySelectorAll('#lockopts .chip-sel').forEach(b=>b.onclick=()=>{
+    document.querySelectorAll('#lockopts .chip-sel').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); lockMs=+b.dataset.ms;
+  });
+  const mic=document.getElementById('micBtn'), label=document.getElementById('recLabel');
+  const wave=document.getElementById('wave'), doDrop=document.getElementById('doDrop');
+  mic.onclick=()=>{
+    if(recTimer){ stopRec(); return; }
+    recSec=0; mic.classList.add('recording'); mic.textContent='⏹'; label.textContent='録音中… タップで停止';
+    waveTimer=setInterval(()=>{ // 疑似波形
+      wave.innerHTML=''; for(let i=0;i<24;i++){ const s=document.createElement('span'); s.style.height=(8+Math.random()*38)+'px'; wave.appendChild(s);} },120);
+    recTimer=setInterval(()=>{ recSec++; label.textContent='録音中… '+recSec+'秒'; if(recSec>=60) stopRec(); },1000);
+    function stopRec(){ clearInterval(recTimer); clearInterval(waveTimer); recTimer=null;
+      mic.classList.remove('recording'); mic.textContent='🎙'; label.textContent='録音完了（'+recSec+'秒）録り直しはタップ';
+      recorded=true; recDuration=recSec; doDrop.disabled=false; doDrop.style.opacity=1; }
+    mic._stop=stopRec;
+  };
+  doDrop.onclick=()=>{
+    const title=document.getElementById('titleInput').value.trim()||'無題のドロップ';
+    const id='own_'+Date.now();
+    // 位置のぼかし（プライバシー設定）。
+    const blur = v => privacy.precision==='approximate' ? Math.round(v*1000)/1000 : v;
+    pins.push({ id, author:'あなた', title, lat:blur(me.lat), lng:blur(me.lng),
+      visibleAt: now()+lockMs, tip:0, gifts:0, warp:0, unlocked:true, own:true });
+    closeSheet(); render();
+    toast('ドロップ！'+ (lockMs<60000? Math.round(lockMs/1000)+'秒後に公開':'公開時刻に表示') );
+  };
+}
+
+// ---- 一覧 ----
+function renderList(){
+  const list=document.getElementById('list'); if(list.style.display==='none')return;
+  const mine=pins.filter(p=>p.own).sort((a,b)=>b.visibleAt-a.visibleAt);
+  const pub=pins.filter(p=>!p.own && showItem(p));
+  const saved=pins.filter(p=>savedPins.has(p.id));
+  const tile=p=>{
+    const pending=p.own&&now()<p.visibleAt; const play=canPlay(p);
+    const tag=pending?'<span class="tag pending">公開待ち '+remain(p)+'</span>'
+             :play?'<span class="tag unlocked">解禁済み</span>':'<span class="tag locked">未解禁</span>';
+    const star=savedPins.has(p.id)?' '+ic('star',14):'';
+    return `<div class="tile"><h3>${p.title}${star}</h3>
+      <div class="meta">by ${p.author} ${tag}</div>
+      <div class="meta" style="margin-top:4px">${ic('support',13)} ${p.tip}円 / ${p.gifts}件の応援 ${p.warp?' ・ '+ic('bolt',12)+p.warp:''}</div>
+      <div class="row">
+        ${play&&!pending?`<button class="btn-tonal" onclick="playPin('${p.id}')">▶ 再生</button>`:''}
+        ${play&&!pending?`<button class="btn-tonal" onclick="toggleSave('${p.id}')">${savedPins.has(p.id)?'★ 保存解除':'☆ 保存'}</button>`:''}
+        ${p.own?`<button class="btn-tonal" style="color:#e5557a" onclick="delPin('${p.id}')">🗑 削除</button>`
+               :`<button class="btn-tonal" style="color:#e5557a" onclick="safety('${p.id}')">⚠ 通報/ブロック</button>`}
+      </div></div>`;
+  };
+  const sec=(t,arr,empty)=>`<h3 style="font-size:14px;color:var(--muted);margin-top:16px">${t}</h3>`+
+    (arr.length?arr.map(tile).join(''):'<p class="meta" style="padding:8px">'+empty+'</p>');
+  list.innerHTML =
+    sec('★ 保存済み', saved, 'まだありません（解禁後に保存できます）')+
+    sec('マイドロップ', mine, 'まだありません')+
+    sec('公開中', pub, 'なし');
+}
+function delPin(id){ pins=pins.filter(p=>p.id!==id); toast('削除しました'); render(); }
+function playPin(id){ const p=pins.find(x=>x.id===id); if(p){ p.unlocked=true; unlockedSheet(p);} }
+const REASONS = ['待ち伏せ・付きまといの恐れ','迷惑行為・嫌がらせ','個人情報・プライバシー侵害','性的・不適切な内容','スパム・宣伝','その他'];
+function safety(id){
+  const p=pins.find(x=>x.id===id); if(!p)return;
+  openSheet(`
+    <h2>⚠ 安全機能</h2>
+    <p class="sub">不快・危険な投稿を非表示にできます</p>
+    <button class="full danger" onclick="reportReasons('${id}')">このピンを通報する</button>
+    <button class="full danger" onclick="blockAuthor('${id}')">投稿者「${p.author}」をブロック</button>
+    <button class="full btn-tonal" onclick="closeSheet()">キャンセル</button>
+  `);
+}
+function reportReasons(id){
+  openSheet(`
+    <h2>通報の理由を選択</h2>
+    <p class="sub">運営が内容を確認します。緊急時は警察へ。</p>
+    ${REASONS.map(r=>`<button class="full btn-tonal" style="margin-top:8px" onclick="reportPin('${id}','${r}')">${r}</button>`).join('')}
+  `);
+}
+function toggleSave(id){
+  const saved = savedPins.has(id);
+  if(saved){ savedPins.delete(id); toast('保存を解除しました'); }
+  else { savedPins.add(id); toast('保存しました（保存済みで確認）'); }
+  // シートを作り直さず、その場でボタン表示だけ更新（再生も止めない）。
+  const btn=document.getElementById('saveBtn');
+  if(btn){
+    const nowSaved=savedPins.has(id);
+    btn.className='full '+(nowSaved?'btn-primary':'btn-tonal');
+    btn.textContent=nowSaved?'★ 保存済み（タップで解除）':'☆ このドロップを保存';
+  }
+  render(); // 一覧の★や保存済みセクションを更新
+}
+// ---- アカウント登録（必須） ----
+// 登録ユーザーはブラウザに保存（再訪時はログイン画面を表示）。
+function getUsers(){ try{return JSON.parse(localStorage.getItem('sd_users')||'{}');}catch(e){return {};} }
+function setUsers(u){ localStorage.setItem('sd_users', JSON.stringify(u)); }
+let authMode = 'register';
+const _v = id => (document.getElementById(id)?.value||'');
+
+function renderAuthGate(){
+  const reg = authMode==='register';
+  document.getElementById('authBody').innerHTML = `
+    <h2 class="grad-text">${reg?'アカウント登録':'ログイン'}</h2>
+    <p class="sub">${reg?'フォローした人のドロップだけが届きます':'ログインID（@なし）とパスワードでログイン'}</p>
+    ${reg?'<input id="authName" placeholder="表示名" />':''}
+    <input id="authUser" placeholder="ログインID（例: kenta）" />
+    ${reg?'<input id="authEmail" placeholder="メールアドレス" />':''}
+    <input id="authPass" type="password" placeholder="パスワード（6文字以上）" onkeydown="if(event.key==='Enter'){${reg?'registerDemo':'loginDemo'}()}" />
+    ${reg?`<label style="display:flex;align-items:center;gap:6px;font-size:12px;max-width:300px;color:var(--muted)">
+      <input type="checkbox" id="authAgree" style="width:auto">
+      <span><a style="color:var(--blue);cursor:pointer" onclick="legalAuth('terms')">利用規約</a>・<a style="color:var(--blue);cursor:pointer" onclick="legalAuth('privacy')">プライバシーポリシー</a>に同意</span></label>`:''}
+    <div id="authErr" style="color:#e5557a;font-size:13px;min-height:18px;max-width:300px;text-align:center"></div>
+    <button class="btn-primary" onclick="${reg?'registerDemo()':'loginDemo()'}">${reg?'登録して始める':'ログイン'}</button>
+    <button style="background:none;border:none;color:var(--blue);cursor:pointer;font-size:13px" onclick="switchAuth()">${reg?'既にアカウントをお持ちの方はログイン':'新規登録はこちら'}</button>
+  `;
+}
+const LEGAL = {
+  terms: { t:'利用規約（抜粋）', b:
+`・本アプリの利用にはアカウント登録が必要です。
+・違法/わいせつ/嫌がらせ/待ち伏せを助長する投稿等を禁止します。
+・運営は不適切な投稿を非表示/削除し、悪質な利用者を停止できます。
+・通報・ブロックが利用できます。
+・課金はApp Storeのアプリ内課金で提供されます。
+・いつでもアカウントを削除できます。` },
+  privacy: { t:'プライバシーポリシー（抜粋）', b:
+`・取得: アカウント情報/投稿/位置情報/設定/購入履歴。
+・位置情報は利用中のみ取得。投稿位置はぼかし可能。
+・地図表示のためタイル提供元へリクエストが送信されます。
+・アカウント削除で関連データを削除します。
+・お問い合わせ: nicchizu.official@gmail.com` },
+};
+// 認証画面内で規約を表示（ゲートを差し替え）。
+function legalAuth(which){
+  const L=LEGAL[which];
+  document.getElementById('authBody').innerHTML =
+    `<div class="sheethdr" style="width:100%"><button class="backbtn" onclick="renderAuthGate()">‹ 戻る</button></div>
+     <h2 style="align-self:flex-start">${L.t}</h2>
+     <div style="text-align:left;font-size:13px;white-space:pre-wrap;line-height:1.7">${L.b}</div>`;
+}
+// ログイン後（通常シート）で規約を表示。
+function legalSheet(which){
+  const L=LEGAL[which];
+  openSheet(`<div class="sheethdr"><button class="backbtn" onclick="settingsSheet()">‹ 設定に戻る</button></div>
+    <h2>${L.t}</h2><div style="text-align:left;font-size:13px;white-space:pre-wrap;line-height:1.7">${L.b}</div>`);
+}
+function switchAuth(){ authMode = authMode==='register'?'login':'register'; renderAuthGate(); }
+function setAuthError(msg){ const e=document.getElementById('authErr'); if(e) e.textContent=msg||''; }
+
+function registerDemo(){
+  setAuthError('');
+  const name=_v('authName').trim();
+  const id=_v('authUser').replace('@','').trim().toLowerCase();
+  const email=_v('authEmail').trim();
+  const pass=_v('authPass');
+  if(!id){ setAuthError('ログインIDを入力してください'); return; }
+  if(!email.includes('@')){ setAuthError('メールアドレスを入力してください'); return; }
+  if(pass.length<6){ setAuthError('パスワードは6文字以上にしてください'); return; }
+  const agree=document.getElementById('authAgree');
+  if(!agree||!agree.checked){ setAuthError('利用規約とプライバシーポリシーへの同意が必要です'); return; }
+  const users=getUsers();
+  if(users[id]){ setAuthError('このログインIDは既に使われています'); return; }
+  users[id]={ name: name||id, email, password: pass, bio:'' };
+  setUsers(users);
+  loginSuccess(id);
+}
+function loginDemo(){
+  setAuthError('');
+  const id=_v('authUser').replace('@','').trim().toLowerCase();
+  const pass=_v('authPass');
+  if(!id || !pass){ setAuthError('ログインIDとパスワードを入力してください'); return; }
+  const u=getUsers()[id];
+  if(!u){ setAuthError('このログインIDは登録されていません'); return; }
+  if(u.password!==pass){ setAuthError('パスワードが違います'); return; }
+  loginSuccess(id);
+}
+const SESSION_TTL = 30*24*60*60*1000; // 30日
+// β版：課金（応援・ワープ購入・収益）を非表示。
+const BETA = true;
+let demoStreak = 0;
+// 連続ログイン判定（7日ごとにワープ+1）。
+function applyDailyLoginDemo(id){
+  const today = new Date().toISOString().slice(0,10);
+  const last = localStorage.getItem('sd_last_'+id);
+  let streak = parseInt(localStorage.getItem('sd_streak_'+id)||'0',10);
+  if(last!==today){
+    const y = new Date(Date.now()-86400000).toISOString().slice(0,10);
+    streak = (last===y) ? streak+1 : 1;
+    localStorage.setItem('sd_streak_'+id, streak);
+    localStorage.setItem('sd_last_'+id, today);
+    if(streak%7===0){ tickets++; render(); toast('🎉 7日連続ログイン達成！ワープチケット+1'); }
+  }
+  demoStreak = streak;
+}
+function loginSuccess(id, silent){
+  const u=getUsers()[id]; if(!u) return;
+  currentUser=u.name; myProfile={ name:u.name, username:id, bio:u.bio||'', avatar:u.avatar||'' };
+  localStorage.setItem('sd_session', JSON.stringify({ id, lastActive: Date.now() }));
+  applyDailyLoginDemo(id);
+  document.getElementById('authGate').style.display='none';
+  render();
+  if(!silent) toast('ようこそ @'+id+' さん');
+}
+// 30日以内にアクセスがあればログイン状態を維持（自動ログイン）。
+function tryRestoreSession(){
+  try{
+    const s=JSON.parse(localStorage.getItem('sd_session')||'null');
+    if(!s) return false;
+    if(Date.now()-s.lastActive > SESSION_TTL){ localStorage.removeItem('sd_session'); return false; }
+    if(!getUsers()[s.id]) return false;
+    loginSuccess(s.id, true); // 復元（トースト無し）
+    return true;
+  }catch(e){ return false; }
+}
+// ---- フォロー ----
+function toggleFollow(author){
+  if(followed.has(author)) followed.delete(author); else followed.add(author);
+  render();
+}
+// 自分のプロフィール（フォロー/フォロワーをタップで一覧へ）。
+function myProfileSheet(){
+  const av = myProfile.avatar
+    ? `<img src="${myProfile.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover">`
+    : `<div style="width:72px;height:72px;border-radius:50%;background:var(--elevated);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700">${(myProfile.name||'?').charAt(0)}</div>`;
+  const followers = Object.keys(accountMeta).filter(a=>accountMeta[a].followsBack);
+  openSheet(`
+    <div class="sheethdr" style="justify-content:flex-end"><button class="backbtn" onclick="closeSheet()">✕ 閉じる</button></div>
+    <div style="text-align:center">${av}
+      <h2 style="margin-top:8px">${myProfile.name||'（未設定）'}</h2>
+      <p class="sub">@${myProfile.username||'—'}</p>
+      ${myProfile.bio?`<p style="font-size:13px;margin:8px 16px">${myProfile.bio}</p>`:''}
+      <div style="display:flex;justify-content:center;gap:28px;margin:12px 0">
+        <div style="cursor:pointer" onclick="followingListSheet()"><b>${followed.size}</b><div style="font-size:11px;color:var(--muted)">フォロー中</div></div>
+        <div style="cursor:pointer" onclick="followersListSheet()"><b>${followers.length}</b><div style="font-size:11px;color:var(--muted)">フォロワー</div></div>
+      </div>
+    </div>
+    <button class="full btn-primary" onclick="profileSettingsSheet()">プロフィールを編集</button>
+    <button class="full btn-tonal" style="margin-top:10px" onclick="settingsSheet()">⚙ 設定とプライバシー</button>
+    <button class="full danger" style="margin-top:10px" onclick="logoutDemo()">ログアウト</button>
+  `);
+}
+// 設定（X等参考のプライバシー・おしゃれ版）。
+const SICON = {
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
+  lock:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  block:'<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6 18.4 18.4"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 2.8 2.6 15.2 0 18M12 3c-2.6 2.8-2.6 15.2 0 18"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/>',
+  pin:'<path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  logout:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  support:'<path d="M12 21 C12 21 4 13.8 4 8.6 A4.4 4.4 0 0 1 12 6 A4.4 4.4 0 0 1 20 8.6 C20 13.8 12 21 12 21 z" fill="url(#brand)" stroke="none"/>',
+};
+// キー名（SICON）でもパス文字列でもOK。
+const _si = k => `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="url(#brand)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SICON[k]||k}</svg>`;
+function settingsSheet(){
+  // トグル行
+  const sw=(icon,title,sub,checked,fn)=>`<label class="srow">
+    <span class="ico">${_si(icon)}</span>
+    <span class="txt"><b>${title}</b>${sub?`<small>${sub}</small>`:''}</span>
+    <span class="sw"><input type="checkbox" ${checked?'checked':''} onchange="${fn}"><i></i></span></label>`;
+  // 選択行（ラジオ相当）
+  const sel=(icon,title,sub,on,fn)=>`<div class="srow ${on?'sel':''}" onclick="${fn}">
+    <span class="ico">${_si(icon)}</span>
+    <span class="txt"><b>${title}</b>${sub?`<small>${sub}</small>`:''}</span>
+    ${on?'<span class="check">✓</span>':''}</div>`;
+  // 遷移行
+  const nav=(icon,title,badge,fn)=>`<div class="srow" onclick="${fn}">
+    <span class="ico">${_si(icon)}</span>
+    <span class="txt"><b>${title}</b></span>
+    ${badge!=null?`<span class="badge">${badge}</span>`:''}<span class="chev">›</span></div>`;
+
+  openSheet(`
+    <div class="sheethdr"><button class="backbtn" onclick="myProfileSheet()">‹ 戻る</button></div>
+    <h2>設定とプライバシー</h2>
+    <div style="text-align:left">
+      <div class="slabel">アカウント</div>
+      <div class="sgroup">
+        ${nav('user','プロフィールを編集',null,'profileSettingsSheet()')}
+        <div class="srow"><span class="ico">${_si('lock')}</span>
+          <span class="txt"><b>連続ログイン</b><small>7日ごとにワープチケット1枚</small></span>
+          <span class="badge">${demoStreak}日</span></div>
+        ${sw('lock','非公開アカウント','フォローを承認制にする',privacy.protected,'privacy.protected=this.checked')}
+      </div>
+
+      <div class="slabel">プライバシーと安全</div>
+      <div class="sgroup">
+        ${nav('block','ブロックしたアカウント',blockedAuthors.size,'blockedListSheet()')}
+      </div>
+
+      <div class="slabel">ドロップの公開範囲</div>
+      <div class="sgroup">
+        ${sel('globe','フォロワーに公開','',privacy.visibility==='followers',"privacy.visibility='followers';settingsSheet()")}
+        ${sel('globe','相互フォローのみ','',privacy.visibility==='mutual',"privacy.visibility='mutual';settingsSheet()")}
+      </div>
+
+      <div class="slabel">見つけやすさ</div>
+      <div class="sgroup">
+        ${sw('search','ユーザー名で検索を許可','',privacy.findUser,'privacy.findUser=this.checked')}
+        ${sw('search','メールアドレスで検索を許可','',privacy.findEmail,'privacy.findEmail=this.checked')}
+      </div>
+
+      <div class="slabel">位置情報（防犯）</div>
+      <div class="sgroup">
+        ${sel('pin','正確な位置','現地でぴったり解禁',privacy.precision==='exact',"privacy.precision='exact';settingsSheet()")}
+        ${sel('pin','おおよその位置','約100mぼかしで特定を防ぐ',privacy.precision==='approximate',"privacy.precision='approximate';settingsSheet()")}
+      </div>
+
+      ${BETA?'':`<div class="slabel">クリエイター</div>
+      <div class="sgroup">
+        ${nav('support','収益・受け取り',null,'earningsSheet()')}
+      </div>`}
+
+      <div class="slabel">情報</div>
+      <div class="sgroup">
+        ${nav('user','利用規約',null,"legalSheet('terms')")}
+        ${nav('lock','プライバシーポリシー',null,"legalSheet('privacy')")}
+      </div>
+
+      <div class="sgroup" style="margin-top:16px">
+        <div class="srow" onclick="logoutDemo()">
+          <span class="ico" style="background:rgba(229,85,122,.16)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e5557a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SICON.logout}</svg></span>
+          <span class="txt"><b style="color:#e5557a">ログアウト</b></span>
+        </div>
+        <div class="srow" onclick="deleteAccountDemo()">
+          <span class="ico" style="background:rgba(229,85,122,.16)"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#e5557a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13"/></svg></span>
+          <span class="txt"><b style="color:#e5557a">アカウントを削除</b><small>投稿・フォロー等を完全に削除</small></span>
+        </div>
+      </div>
+    </div>
+  `);
+}
+// 収益（応援された側への還元）ダッシュボード（デモ）。
+function earningsSheet(){
+  const STORE=0.30, PLAT=0.10;
+  const mine=pins.filter(p=>p.own);
+  const gross=mine.reduce((s,p)=>s+(p.tip||0),0);
+  const gifts=mine.reduce((s,p)=>s+(p.gifts||0),0);
+  const storeFee=Math.round(gross*STORE);
+  const platFee=Math.round(gross*(1-STORE)*PLAT);
+  const net=Math.round(gross*(1-STORE)*(1-PLAT));
+  const row=(l,v,b)=>`<div style="display:flex;justify-content:space-between;padding:6px 0;${b?'font-weight:700':''}"><span>${l}</span><span>${v}</span></div>`;
+  openSheet(`
+    <div class="sheethdr"><button class="backbtn" onclick="settingsSheet()">‹ 設定に戻る</button></div>
+    <h2>収益・受け取り</h2>
+    <div style="background:linear-gradient(120deg,var(--pink),var(--blue));color:#1D2A4C;border-radius:16px;padding:18px;text-align:left">
+      <div style="font-size:13px">受け取り見込み額</div>
+      <div style="font-size:32px;font-weight:800">¥${net}</div>
+      <div style="font-size:12px">応援総額 ¥${gross} ・ ${gifts}件</div>
+    </div>
+    <div style="text-align:left;font-size:14px;margin-top:12px">
+      ${row('応援総額（グロス）','¥'+gross)}
+      ${row('ストア手数料（30%）','−¥'+storeFee)}
+      ${row('運営手数料（10%）','−¥'+platFee)}
+      <hr style="border-color:rgba(255,255,255,.1)">
+      ${row('受け取り見込み','¥'+net,true)}
+    </div>
+    <button class="full btn-primary" style="margin-top:14px" onclick="toast('出金（Stripe Connect）はバックエンド準備後に有効化されます')">受け取り方法を設定（準備中）</button>
+    <p class="sub" style="margin-top:8px;text-align:left">銀行口座での受け取りには本人確認(KYC)が必要です。購入のサーバー検証・台帳と合わせて順次提供します。</p>
+  `);
+}
+function deleteAccountDemo(){
+  if(!confirm('アカウントと、あなたの投稿・フォロー等のデータを完全に削除します。\nこの操作は取り消せません。続行しますか？')) return;
+  const id=myProfile.username; const users=getUsers(); delete users[id]; setUsers(users);
+  localStorage.removeItem('sd_session');
+  pins=pins.filter(p=>!p.own);
+  currentUser=null; followed=new Set(); myProfile={name:'',username:'',bio:''};
+  closeSheet(); render();
+  authMode='register'; renderAuthGate();
+  document.getElementById('authGate').style.display='flex';
+  toast('アカウントを削除しました');
+}
+function blockedListSheet(){
+  const list=[...blockedAuthors];
+  openSheet(`<div class="sheethdr"><button class="backbtn" onclick="settingsSheet()">‹ 設定に戻る</button></div>
+    <h2>ブロックしたアカウント</h2>
+    ${list.length?list.map(a=>`<div style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <div style="width:34px;height:34px;border-radius:50%;background:var(--elevated);display:flex;align-items:center;justify-content:center;font-weight:700">${a.charAt(0)}</div>
+      <div style="flex:1">${a}<div style="font-size:11px;color:var(--muted)">ブロック中（投稿は非表示）</div></div>
+      <button class="btn-primary" style="border:none;border-radius:20px;padding:6px 14px;cursor:pointer" onclick="unblock('${a}')">解除</button>
+    </div>`).join(''):'<p class="meta" style="padding:8px">ブロック中のアカウントはありません</p>'}`);
+}
+function unblock(a){ blockedAuthors.delete(a); render(); blockedListSheet(); toast('ブロックを解除しました'); }
+function _accountRow(a){
+  const m=accountMeta[a]||{username:a};
+  return `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;cursor:pointer" onclick="profileSheet('${a}')">
+    <div style="width:38px;height:38px;border-radius:50%;background:var(--elevated);display:flex;align-items:center;justify-content:center;font-weight:700">${a.charAt(0)}</div>
+    <div style="flex:1">${a} ${isMutual(a)?'<span class="tag unlocked" style="margin-left:4px">相互</span>':''}
+      <div style="font-size:11px;color:var(--muted)">@${m.username} ・ フォロワー ${followerCount(a)}</div></div>
+    <button class="${followed.has(a)?'btn-tonal':'btn-primary'}" style="border:none;border-radius:20px;padding:6px 14px;cursor:pointer" onclick="event.stopPropagation();toggleFollow('${a}')">${followed.has(a)?'フォロー中':'フォロー'}</button>
+  </div>`;
+}
+function followingListSheet(){
+  const list=[...followed];
+  openSheet(`<h2>フォロー中</h2>${list.length?list.map(_accountRow).join(''):'<p class="meta" style="padding:8px">まだ誰もフォローしていません</p>'}`);
+}
+function followersListSheet(){
+  const list=Object.keys(accountMeta).filter(a=>accountMeta[a].followsBack);
+  openSheet(`<h2>フォロワー</h2>${list.length?list.map(_accountRow).join(''):'<p class="meta" style="padding:8px">まだフォロワーがいません</p>'}`);
+}
+let acctQuery='';
+function accountsSheet(){
+  const authors=[...new Set(pins.filter(p=>!p.own).map(p=>p.author))]
+    .filter(a=>!blockedAuthors.has(a))
+    .filter(a=>{ const m=accountMeta[a]; const q=acctQuery.toLowerCase();
+      return !q || a.toLowerCase().includes(q) || (m&&m.username.includes(q)); })
+    .sort();
+  openSheet(`
+    <h2>アカウントを探す</h2>
+    <button class="full btn-tonal" style="margin:4px 0 10px" onclick="profileSettingsSheet()">⚙ プロフィール設定</button>
+    <input class="title" placeholder="ユーザー名・表示名で検索（例: kenta）" value="${acctQuery}" oninput="acctQuery=this.value;accountsSheet();" />
+    ${authors.length?authors.map(a=>{
+      const m=accountMeta[a]||{username:a};
+      return `<div style="display:flex;align-items:center;gap:10px;margin-top:10px;cursor:pointer" onclick="profileSheet('${a}')">
+        <div style="width:38px;height:38px;border-radius:50%;background:var(--elevated);display:flex;align-items:center;justify-content:center;font-weight:700">${a.charAt(0)}</div>
+        <div style="flex:1">${a} ${isMutual(a)?'<span class="tag unlocked" style="margin-left:4px">相互</span>':''}
+          <div style="font-size:11px;color:var(--muted)">@${m.username} ・ フォロワー ${followerCount(a)}</div></div>
+        <button class="${followed.has(a)?'btn-tonal':'btn-primary'}" style="border:none;border-radius:20px;padding:6px 14px;cursor:pointer" onclick="event.stopPropagation();toggleFollow('${a}');accountsSheet()">${followed.has(a)?'フォロー中':'フォロー'}</button>
+      </div>`;}).join(''):'<p class="meta" style="padding:8px">該当なし</p>'}
+  `);
+}
+function profileSheet(a){
+  const m=accountMeta[a]||{username:a,bio:''};
+  const drops=pins.filter(p=>p.author===a && (now()>=p.visibleAt));
+  const fol=followed.has(a);
+  openSheet(`
+    <div style="text-align:center">
+      <div style="width:64px;height:64px;border-radius:50%;background:var(--elevated);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;margin:0 auto">${a.charAt(0)}</div>
+      <h2 style="margin-top:8px">${a} ${isMutual(a)?'<span class="tag unlocked">相互フォロー</span>':''}</h2>
+      <p class="sub">@${m.username}</p>
+      ${m.bio?`<p style="font-size:13px;margin:8px 16px">${m.bio}</p>`:''}
+      <div style="display:flex;justify-content:center;gap:28px;margin:12px 0">
+        <div><b>${followerCount(a)}</b><div style="font-size:11px;color:var(--muted)">フォロワー</div></div>
+        <div><b>${drops.length}</b><div style="font-size:11px;color:var(--muted)">ドロップ</div></div>
+      </div>
+    </div>
+    <button class="full ${fol?'btn-tonal':'btn-primary'}" onclick="toggleFollow('${a}');profileSheet('${a}')">${fol?'フォロー中':'フォローする'}</button>
+    ${fol? (drops.length? drops.map(p=>`<div class="tile" style="margin-top:10px"><h3>${p.title}</h3><div class="meta">${followerCount(a)>0?'':''}${canPlay(p)?'解禁済み':'現地/ワープで解禁'}</div></div>`).join(''):'<p class="meta" style="padding:8px">公開中のドロップはありません</p>')
+        : '<p class="meta" style="padding:12px;text-align:center">フォローすると公開ドロップを聴けます</p>'}
+  `);
+}
+function profileSettingsSheet(){
+  const av = myProfile.avatar
+    ? `<img src="${myProfile.avatar}" style="width:72px;height:72px;border-radius:50%;object-fit:cover">`
+    : `<div style="width:72px;height:72px;border-radius:50%;background:var(--elevated);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700">${(myProfile.name||'?').charAt(0)}</div>`;
+  openSheet(`
+    <div class="sheethdr"><button class="backbtn" onclick="myProfileSheet()">‹ 戻る</button></div>
+    <h2>プロフィール設定</h2>
+    <div style="text-align:center;margin-bottom:8px">
+      <label style="cursor:pointer;display:inline-block">
+        ${av}
+        <div style="font-size:12px;color:var(--blue);margin-top:6px">画像を変更</div>
+        <input type="file" accept="image/*" style="display:none" onchange="setAvatar(this)" />
+      </label>
+    </div>
+    <p class="sub">@${myProfile.username||'—'} ・ フォロー ${followed.size} ・ フォロワー ${Object.keys(accountMeta).filter(a=>accountMeta[a].followsBack).length}</p>
+    <input class="title" id="pfName" placeholder="表示名" value="${myProfile.name}" />
+    <input class="title" id="pfUser" placeholder="ユーザーID（@なし・例: kenta）" value="${myProfile.username}" />
+    <input class="title" id="pfBio" placeholder="自己紹介" value="${myProfile.bio}" />
+    <button class="full btn-primary" onclick="saveProfile()">保存</button>
+    <button class="full danger" style="margin-top:10px" onclick="logoutDemo()">ログアウト</button>
+  `);
+}
+function setAvatar(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ myProfile.avatar=r.result; profileSettingsSheet(); };
+  r.readAsDataURL(f);
+}
+function logoutDemo(){
+  currentUser=null; followed=new Set(); myProfile={name:'',username:'',bio:''};
+  localStorage.removeItem('sd_session');
+  closeSheet();
+  authMode='login'; renderAuthGate(); // 登録済みなのでログイン画面
+  document.getElementById('authGate').style.display='flex';
+  toast('ログアウトしました');
+}
+function saveProfile(){
+  const oldId=myProfile.username;
+  const newId=(document.getElementById('pfUser').value||'').replace('@','').trim().toLowerCase()||oldId;
+  const users=getUsers();
+  // ログインID変更時は重複チェック。
+  if(newId!==oldId && users[newId]){ toast('このログインIDは既に使われています'); return; }
+  myProfile.name=(document.getElementById('pfName').value||'').trim()||myProfile.name;
+  myProfile.bio=(document.getElementById('pfBio').value||'').trim();
+  myProfile.username=newId;
+  currentUser=myProfile.name;
+  // 保存ユーザーを更新（ID変更ならキーを移動）。
+  const rec=users[oldId]||{password:'',email:''};
+  rec.name=myProfile.name; rec.bio=myProfile.bio; rec.avatar=myProfile.avatar||'';
+  if(newId!==oldId){ delete users[oldId]; }
+  users[newId]=rec; setUsers(users);
+  closeSheet(); render(); toast('プロフィールを更新しました');
+}
+function reportPin(id,reason){ reportedPins.add(id); closeSheet(); render(); toast('通報しました（'+reason+'）。表示を停止します。'); }
+function blockAuthor(id){ const p=pins.find(x=>x.id===id); if(p){ blockedAuthors.add(p.author); } closeSheet(); render(); toast('ブロックしました。'); }
+
+// ---- UI操作 ----
+document.getElementById('dropBtn').onclick=dropModal;
+document.getElementById('resetBtn').onclick=()=>{ tickets=2; me={lat:38.2601,lng:140.8826}; if(lmap){lmap.setView([me.lat,me.lng],16);} blockedAuthors=new Set(); reportedPins=new Set(); savedPins=new Set(); followed=new Set(); seed(); render(); toast('リセットしました（フォローもクリア）'); };
+document.getElementById('accountsBtn').onclick=accountsSheet;
+document.getElementById('profileBtn').onclick=myProfileSheet;
+document.getElementById('toggleList').onclick=()=>{
+  const list=document.getElementById('list'), mapwrap=document.getElementById('mapwrap'), act=document.getElementById('actions'), hint=document.getElementById('hint');
+  const show = list.style.display==='none' || !list.style.display;
+  list.style.display = show?'block':'none';
+  mapwrap.style.display = show?'none':'block';   // 地図枠ごと隠して空白を防ぐ
+  act.style.display = show?'none':'flex';
+  hint.style.display = show?'none':'block';
+  if(show){ renderList(); }
+  else { setTimeout(()=>{ if(lmap) lmap.invalidateSize(); }, 50); } // 地図再表示時にサイズ再計算
+};
+
+// ---- 時間経過で公開待ち→公開へ自動更新 ----
+setInterval(()=>{ render(); }, 1000);
+
+let toastTimer=null;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1800); }
+
+window.addEventListener('resize', render);
+initMap(); // Leaflet + OSM 初期化
+// セッション復元（30日以内）。無ければ：登録済みならログイン、未登録なら新規登録。
+if(!tryRestoreSession()){
+  authMode = Object.keys(getUsers()).length ? 'login' : 'register';
+  renderAuthGate();
+}
+render();
+// Leafletはコンテナ表示後にサイズ再計算が必要な場合がある。
+setTimeout(()=>{ if(lmap) lmap.invalidateSize(); }, 300);
+</script>
+</body>
+</html>

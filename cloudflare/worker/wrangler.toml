@@ -1,0 +1,13 @@
+name = "sounddrop-tiles"
+main = "index.js"
+compatibility_date = "2024-09-01"
+
+# R2 バケットをバインド（事前に作成: npx wrangler r2 bucket create sounddrop-tiles）
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "sounddrop-tiles"
+
+[vars]
+# R2 内の PMTiles のキー名（アップロードしたファイル名）。
+# 日本のみ: "japan.pmtiles" / 世界: "planet.pmtiles"
+PMTILES_KEY = "japan.pmtiles"
