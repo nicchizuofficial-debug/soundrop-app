@@ -19,18 +19,25 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Code signing 準備（証明書・プロファイルを無ければ自動生成）
+      - name: Flutter パッケージ取得
+        script: flutter pub get
+      - name: CocoaPods インストール
+        script: find . -name "Podfile" -execdir pod install \;
+      - name: Code signing（配布証明書・プロファイルを生成/取得）
         script: |
+          set -ex
           keychain initialize
+          # 配布証明書を Codemagic で新規作成（秘密鍵を Codemagic が保持）。
+          # 既存があってもこの鍵で署名できるよう、必ず1枚用意する。
+          app-store-connect create-certificate \
+            --type IOS_DISTRIBUTION \
+            --save
+          # App Store 用プロビジョニングプロファイルを取得/作成。
           app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
             --type IOS_APP_STORE \
             --create
           keychain add-certificates
           xcode-project use-profiles
-      - name: Flutter パッケージ取得
-        script: flutter pub get
-      - name: CocoaPods インストール
-        script: find . -name "Podfile" -execdir pod install \;
       - name: IPA ビルド（β＝課金オフ / Firebase有効 / MapTiler本番タイル）
         script: |
           flutter build ipa --release \
