@@ -23,18 +23,21 @@ workflows:
         script: flutter pub get
       - name: CocoaPods インストール
         script: find . -name "Podfile" -execdir pod install \;
-      - name: Code signing（配布証明書・プロファイルを生成/取得）
+      - name: Code signing（配布証明書を新規作成して署名）
         script: |
           set -ex
           keychain initialize
-          # 配布証明書を Codemagic で新規作成（秘密鍵を Codemagic が保持）。
-          # 既存があってもこの鍵で署名できるよう、必ず1枚用意する。
-          app-store-connect create-certificate \
+          # 署名用の秘密鍵を生成（PEM）。Codemagic がこの鍵を保持する。
+          ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/cert_key.pem -q -N ""
+          # その秘密鍵で配布証明書を作成（既存の鍵無し証明書問題を回避）。
+          app-store-connect certificates create \
             --type IOS_DISTRIBUTION \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --save
           # App Store 用プロビジョニングプロファイルを取得/作成。
           app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
             --type IOS_APP_STORE \
+            --certificate-key=@file:/tmp/cert_key.pem \
             --create
           keychain add-certificates
           xcode-project use-profiles
