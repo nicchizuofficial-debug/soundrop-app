@@ -15,19 +15,22 @@ workflows:
     integrations:
       app_store_connect: N9Q53984B7   # ← Codemagic に登録済みのAPIキー名（既存キーを再利用）
     environment:
-      ios_signing:
-        distribution_type: app_store          # TestFlight/App Store 配布署名
-        bundle_identifier: com.nicchizu.soundDrop
       flutter: stable
       xcode: latest
       cocoapods: default
     scripts:
+      - name: Code signing 準備（証明書・プロファイルを無ければ自動生成）
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
       - name: Flutter パッケージ取得
         script: flutter pub get
       - name: CocoaPods インストール
         script: find . -name "Podfile" -execdir pod install \;
-      - name: 署名プロファイルを Xcode に適用
-        script: xcode-project use-profiles
       - name: IPA ビルド（β＝課金オフ / Firebase有効 / MapTiler本番タイル）
         script: |
           flutter build ipa --release \
