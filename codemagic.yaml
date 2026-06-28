@@ -28,7 +28,7 @@ workflows:
         script: find . -name "Podfile" -execdir pod install \;
       - name: 署名プロファイルを Xcode に適用
         script: xcode-project use-profiles
-      - name: IPA ビルド（β: 課金オフ・Firebase 有効・MapTiler 本番タイル）
+      - name: IPA ビルド（β＝課金オフ / Firebase有効 / MapTiler本番タイル）
         script: |
           flutter build ipa --release \
             --dart-define=USE_FIREBASE=true \
