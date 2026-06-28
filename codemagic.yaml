@@ -13,7 +13,7 @@ workflows:
     instance_type: mac_mini_m2
     max_build_duration: 60
     integrations:
-      app_store_connect: N9Q53984B7   # ← Codemagic に登録済みのAPIキー名（既存キーを再利用）
+      app_store_connect: Codemagic   # ← Codemagic に登録済みのAPIキー名（Name欄の値）
     environment:
       flutter: stable
       xcode: latest
