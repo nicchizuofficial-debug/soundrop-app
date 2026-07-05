@@ -111,7 +111,6 @@ class _MapScreenState extends State<MapScreen> {
       options: MapOptions(
         initialCenter: loc ?? _initialCenter,
         initialZoom: 16,
-        onTap: (_, latLng) => _onMapTap(latLng),
       ),
       children: [
         // ダーク地図（MapTiler/Stadiaキーがあれば本番用、無ければCARTOにフォールバック）。
@@ -138,13 +137,6 @@ class _MapScreenState extends State<MapScreen> {
         ]),
       ],
     );
-  }
-
-  /// 地図タップで現在地を移動（動作確認用）。
-  void _onMapTap(LatLng latLng) {
-    context
-        .read<PinProvider>()
-        .setManualLocation(latLng.latitude, latLng.longitude);
   }
 
   /// ピンタップ時の分岐。

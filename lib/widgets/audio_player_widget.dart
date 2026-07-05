@@ -57,21 +57,27 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
 
   Future<void> _loadSource() async {
     try {
+      final url = widget.audioUrl;
+      // Firebase Storage 等のリモートURL（http/https）はローカルファイルとして
+      // 開くと失敗するため、setUrl / Uri.parse を使う。
+      final isRemote = url.startsWith('http://') || url.startsWith('https://');
       final hasClip = widget.clipStart != null || widget.clipEnd != null;
       if (hasClip) {
         // トリミング範囲を再生時に切り出す（元ファイルは無加工）。
-        final child = widget.isAsset
-            ? AudioSource.asset(widget.audioUrl)
-            : AudioSource.uri(Uri.file(widget.audioUrl));
+        final UriAudioSource child = widget.isAsset
+            ? AudioSource.asset(url)
+            : AudioSource.uri(isRemote ? Uri.parse(url) : Uri.file(url));
         await _player.setAudioSource(ClippingAudioSource(
           child: child,
           start: widget.clipStart,
           end: widget.clipEnd,
         ));
       } else if (widget.isAsset) {
-        await _player.setAsset(widget.audioUrl);
+        await _player.setAsset(url);
+      } else if (isRemote) {
+        await _player.setUrl(url);
       } else {
-        await _player.setFilePath(widget.audioUrl);
+        await _player.setFilePath(url);
       }
       if (widget.autoPlay && mounted) await _player.play();
     } catch (e) {

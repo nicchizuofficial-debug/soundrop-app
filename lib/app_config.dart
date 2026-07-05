@@ -53,8 +53,9 @@ ReportSink createReportSink() {
   return LocalReportSink();
 }
 
-/// アカウント名簿（本番は Firestore users 由来に拡張可。現状はシード）。
+/// アカウント名簿。USE_FIREBASE=true ではデモ名簿を出さない（空）。
 AccountDirectory createAccountDirectory() {
+  if (AppConfig.useFirebase) return EmptyAccountDirectory();
   return LocalAccountDirectory();
 }
 

@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../models/app_user.dart';
 import '../state/pin_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/sound_drop_logo.dart';
 import 'legal_screen.dart';
 import 'map_screen.dart';
 

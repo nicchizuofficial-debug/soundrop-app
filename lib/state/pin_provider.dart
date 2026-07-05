@@ -455,9 +455,17 @@ class PinProvider extends ChangeNotifier {
         return;
       }
 
-      final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      // 屋内などで高精度測位が長引くとタイムアウト。その場合は前回位置で代替。
+      Position? pos;
+      try {
+        pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 12),
+        );
+      } catch (_) {
+        pos = await Geolocator.getLastKnownPosition();
+      }
+      if (pos == null) return; // 取得できず（状態は変えない）
       _currentLatLng = LatLng(pos.latitude, pos.longitude);
       _locationStatus = LocationStatus.granted;
       notifyListeners();

@@ -8,6 +8,12 @@ abstract class AccountDirectory {
   Future<List<Account>> all();
 }
 
+/// Firebase モード用。デモ名簿を出さない（将来 Firestore users で置き換え）。
+class EmptyAccountDirectory implements AccountDirectory {
+  @override
+  Future<List<Account>> all() async => const [];
+}
+
 /// デモ用のシード名簿。dummy_pins の ownerId と uid を一致させている。
 class LocalAccountDirectory implements AccountDirectory {
   @override
