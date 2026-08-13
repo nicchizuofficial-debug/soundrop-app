@@ -23,22 +23,29 @@ workflows:
         script: flutter pub get
       - name: CocoaPods インストール
         script: find . -name "Podfile" -execdir pod install \;
-      - name: Code signing（配布証明書を新規作成して署名）
+      - name: Code signing（既存証明書を再利用。無ければ新規作成）
         script: |
           set -ex
           keychain initialize
-          # 署名用の秘密鍵を生成（PEM）。Codemagic がこの鍵を保持する。
-          ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/cert_key.pem -q -N ""
-          # その秘密鍵で配布証明書を作成（既存の鍵無し証明書問題を回避）。
-          app-store-connect certificates create \
-            --type IOS_DISTRIBUTION \
-            --certificate-key=@file:/tmp/cert_key.pem \
-            --save
-          # App Store 用プロビジョニングプロファイルを取得/作成。
-          app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
-            --type IOS_APP_STORE \
-            --certificate-key=@file:/tmp/cert_key.pem \
-            --create
+          # まず既存の署名ファイル（前回このパイプラインが --save で保存した
+          # 証明書＋秘密鍵）の再利用を試みる。ここで毎回 certificates create すると
+          # Apple 側の配布証明書の上限に達して 409 エラーになるため、
+          # 新規作成は「既存が見つからない場合のみ」に限定する。
+          if app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
+              --type IOS_APP_STORE; then
+            echo "既存の署名ファイルを再利用しました"
+          else
+            echo "再利用できる証明書が無いため新規作成します"
+            ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/cert_key.pem -q -N ""
+            app-store-connect certificates create \
+              --type IOS_DISTRIBUTION \
+              --certificate-key=@file:/tmp/cert_key.pem \
+              --save
+            app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
+              --type IOS_APP_STORE \
+              --certificate-key=@file:/tmp/cert_key.pem \
+              --create
+          fi
           keychain add-certificates
           xcode-project use-profiles
       - name: IPA ビルド（β＝課金オフ / Firebase有効 / MapTiler本番タイル）

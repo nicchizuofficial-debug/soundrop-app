@@ -53,9 +53,14 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     // 初回フレーム後に現在地取得＋連続ログイン報酬の通知。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = context.read<PinProvider>();
-      provider.updateCurrentLocation();
+      await provider.updateCurrentLocation();
+      final loc = provider.currentLatLng;
+      // initialCenter はFlutterMap生成時のみ有効なため、取得後は明示的にカメラを移動させる。
+      if (loc != null && mounted) {
+        _controller.move(loc, _controller.camera.zoom);
+      }
       final reward = provider.consumePendingReward();
       if (reward > 0 && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -111,6 +116,10 @@ class _MapScreenState extends State<MapScreen> {
       options: MapOptions(
         initialCenter: loc ?? _initialCenter,
         initialZoom: 16,
+        // 二本指ピンチでの誤回転を防止（ズーム／移動のみ許可）。
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+        ),
       ),
       children: [
         // ダーク地図（MapTiler/Stadiaキーがあれば本番用、無ければCARTOにフォールバック）。
@@ -132,9 +141,14 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ]),
         MarkerLayer(markers: markers),
-        RichAttributionWidget(attributions: [
-          TextSourceAttribution(MapTiles.attribution),
-        ]),
+        // 常時は小さいアイコンのみ。タップで出典表示を展開（規約上、表示自体は必須）。
+        RichAttributionWidget(
+          alignment: AttributionAlignment.bottomRight,
+          showFlutterMapAttribution: false,
+          attributions: [
+            TextSourceAttribution(MapTiles.attribution),
+          ],
+        ),
       ],
     );
   }
@@ -574,8 +588,14 @@ class _MapScreenState extends State<MapScreen> {
             tooltip: '現在地更新',
             backgroundColor: AppColors.navyElevated,
             child: const GradientIcon(AppIcons.myLocation, size: 22),
-            onPressed: () =>
-                context.read<PinProvider>().updateCurrentLocation(),
+            onPressed: () async {
+              final provider = context.read<PinProvider>();
+              await provider.updateCurrentLocation();
+              final loc = provider.currentLatLng;
+              if (loc != null && mounted) {
+                _controller.move(loc, _controller.camera.zoom);
+              }
+            },
           ),
           const SizedBox(height: 12),
           // ブランドグラデーションのドロップボタン。

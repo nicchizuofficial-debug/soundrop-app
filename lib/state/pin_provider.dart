@@ -243,7 +243,9 @@ class PinProvider extends ChangeNotifier {
       isFollowing(uid) && (accountOf(uid)?.followsBack ?? false);
 
   /// 自分のフォロー数／フォロワー数（フォローバックしている人数）。
-  int get myFollowingCount => _following.length;
+  // 名簿から消えたアカウント（例: 隠されたデモアカウント）へのフォローIDが
+  // _following に残っていても数えないよう、一覧（followingAccounts）と揃える。
+  int get myFollowingCount => followingAccounts.length;
   int get myFollowerCount =>
       _accounts.where((a) => a.followsBack).length;
 
