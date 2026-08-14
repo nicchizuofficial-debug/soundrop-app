@@ -288,9 +288,12 @@ class _AuthScreenState extends State<AuthScreen> {
                             _isLogin = !_isLogin;
                             _error = null;
                           }),
-                  child: Text(_isLogin
-                      ? 'アカウントが無い方はこちら（新規登録）'
-                      : '既にアカウントをお持ちの方はこちら（ログイン）'),
+                  child: Text(
+                    _isLogin
+                        ? 'アカウントが無い方はこちら\n（新規登録）'
+                        : '既にアカウントをお持ちの方はこちら\n（ログイン）',
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
             ),

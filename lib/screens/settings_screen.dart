@@ -38,7 +38,7 @@ class SettingsScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.local_fire_department_outlined),
                 title: const Text('連続ログイン'),
-                subtitle: const Text('7日ごとにワープチケット1枚プレゼント'),
+                subtitle: const Text('7日ごとにワープチケット\n1枚プレゼント'),
                 trailing: Text('${provider.loginStreak}日',
                     style: Theme.of(context).textTheme.titleMedium),
               ),
@@ -151,7 +151,7 @@ class SettingsScreen extends StatelessWidget {
                 leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
                 title: const Text('アカウントを削除',
                     style: TextStyle(color: Colors.redAccent)),
-                subtitle: const Text('投稿・フォロー等のデータを完全に削除します'),
+                subtitle: const Text('投稿・フォロー等のデータを\n完全に削除します'),
                 onTap: () => _deleteAccount(context),
               ),
               const SizedBox(height: 24),
