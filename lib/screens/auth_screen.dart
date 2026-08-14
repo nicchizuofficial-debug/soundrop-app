@@ -33,6 +33,14 @@ class _AuthScreenState extends State<AuthScreen> {
   );
 
   Future<void> _submit() async {
+    if (_username.text.trim().isEmpty) {
+      setState(() => _error = 'ログインIDを入力してください');
+      return;
+    }
+    if (_password.text.isEmpty) {
+      setState(() => _error = 'パスワードを入力してください');
+      return;
+    }
     if (!_isLogin && !_agreed) {
       setState(() => _error = '利用規約とプライバシーポリシーへの同意が必要です');
       return;

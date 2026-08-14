@@ -2,16 +2,11 @@ import '../models/account.dart';
 
 /// アカウント名簿（検索・プロフィール・フォロワー数の供給元）。
 ///
-/// 既定はデモ用のシード実装。本番は Firestore の users コレクション等に置き換える
+/// ローカルモードはデモ用のシード実装。Firebase モードは
+/// [FirebaseAccountDirectory]（Firestore の users コレクション）を使う
 /// （uid は投稿の ownerId と一致させること）。
 abstract class AccountDirectory {
   Future<List<Account>> all();
-}
-
-/// Firebase モード用。デモ名簿を出さない（将来 Firestore users で置き換え）。
-class EmptyAccountDirectory implements AccountDirectory {
-  @override
-  Future<List<Account>> all() async => const [];
 }
 
 /// デモ用のシード名簿。dummy_pins の ownerId と uid を一致させている。

@@ -1,5 +1,6 @@
 import 'services/account_directory.dart';
 import 'services/auth_service.dart';
+import 'services/firebase_account_directory.dart';
 import 'services/firebase_auth_service.dart';
 import 'services/firebase_gift_backend.dart';
 import 'services/firebase_payout_service.dart';
@@ -53,9 +54,9 @@ ReportSink createReportSink() {
   return LocalReportSink();
 }
 
-/// アカウント名簿。USE_FIREBASE=true ではデモ名簿を出さない（空）。
+/// アカウント名簿。USE_FIREBASE=true では Firestore の users コレクションを検索対象にする。
 AccountDirectory createAccountDirectory() {
-  if (AppConfig.useFirebase) return EmptyAccountDirectory();
+  if (AppConfig.useFirebase) return FirebaseAccountDirectory();
   return LocalAccountDirectory();
 }
 
