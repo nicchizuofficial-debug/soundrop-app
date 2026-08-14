@@ -233,9 +233,13 @@ class _MapScreenState extends State<MapScreen> {
         const SnackBar(content: Text('ワープチケットを1枚使って解禁しました！')),
       );
       _showUnlockedSheet(pinId);
-    } else {
-      // チケット切れ → 購入導線（モック）へ。
+    } else if (provider.warpTickets <= 0) {
+      // 本当にチケット切れ → 購入導線（モック）へ。
       _showTicketShop();
+    } else {
+      // チケットは残っているのに解禁できなかった＝ピン側の問題（表示更新の
+      // タイムラグ等）。「チケット不足」と誤表示しないよう別メッセージにする。
+      _snack('このピンは解禁できませんでした。もう一度お試しください。');
     }
   }
 

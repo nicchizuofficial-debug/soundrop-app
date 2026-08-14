@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,14 +26,17 @@ class MyDropsScreen extends StatelessWidget {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('ピン一覧'),
+          // 運営用の通報審査画面。一般ユーザーには権限が無い（Firebaseモードでは
+          // 一覧取得がUnsupportedErrorになる）ため、開発時のみ表示する。
           actions: [
-            IconButton(
-              tooltip: 'モデレーション（運営）',
-              icon: const Icon(Icons.shield_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ModerationScreen()),
+            if (kDebugMode)
+              IconButton(
+                tooltip: 'モデレーション（運営・開発用）',
+                icon: const Icon(Icons.shield_outlined),
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const ModerationScreen()),
+                ),
               ),
-            ),
           ],
           bottom: const TabBar(
             tabs: [

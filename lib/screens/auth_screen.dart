@@ -67,6 +67,53 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  /// ログインIDを入力してもらい、パスワード再設定メールを送る。
+  Future<void> _showForgotPasswordDialog() async {
+    final controller = TextEditingController(text: _username.text);
+    final username = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('パスワードの再設定'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'ログインID（例: kenta）',
+            prefixText: '@',
+            prefixIcon: Icon(Icons.alternate_email),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('再設定メールを送る'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (username == null || username.trim().isEmpty || !mounted) return;
+
+    try {
+      await context.read<PinProvider>().sendPasswordReset(username.trim());
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('登録済みのメールアドレスに再設定用メールを送信しました')));
+    } on AuthException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('送信に失敗しました: $e')));
+    }
+  }
+
   @override
   void dispose() {
     _username.dispose();
@@ -161,6 +208,15 @@ class _AuthScreenState extends State<AuthScreen> {
                     border: OutlineInputBorder(),
                   ),
                 ),
+                if (_isLogin)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      style: _denseBtn,
+                      onPressed: _busy ? null : _showForgotPasswordDialog,
+                      child: const Text('パスワードをお忘れですか？'),
+                    ),
+                  ),
                 if (!_isLogin) ...[
                   const SizedBox(height: 8),
                   Row(

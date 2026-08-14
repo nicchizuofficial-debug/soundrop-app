@@ -106,6 +106,26 @@ class FirebaseAuthService implements AuthService {
   }
 
   @override
+  Future<void> sendPasswordReset({required String username}) async {
+    final id = _norm(username);
+    final doc = await _db.collection('usernames').doc(id).get();
+    final email = doc.data()?['email'] as String?;
+    if (email == null) throw AuthException('このログインIDは登録されていません');
+    // signUp時にメール未入力だと仮のダミードメインで登録される（signIn等参照）。
+    // その場合は本人が受け取れる宛先が無いため、その旨を案内する。
+    if (email.endsWith('@sounddrop.app')) {
+      throw AuthException(
+          'このアカウントにはメールアドレスが登録されていません。'
+          'お手数ですが nicchizu.official@gmail.com までお問い合わせください');
+    }
+    try {
+      await _auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_msg(e));
+    }
+  }
+
+  @override
   Future<AppUser> updateProfile({
     String? displayName,
     String? username,

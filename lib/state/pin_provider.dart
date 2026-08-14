@@ -158,13 +158,13 @@ class PinProvider extends ChangeNotifier {
     return _ticketExpiries.where((e) => e.isAfter(now)).length;
   }
 
-  Future<void> _loadTickets() async {
-    final stored = await _settings.loadTicketExpiries();
+  Future<void> _loadTickets(String uid) async {
+    final stored = await _settings.loadTicketExpiries(uid);
     if (stored == null) {
       // 初回付与：2枚（180日有効）。
       _ticketExpiries =
           List.generate(2, (_) => DateTime.now().add(ticketTtl));
-      await _settings.saveTicketExpiries(_isoTickets());
+      await _settings.saveTicketExpiries(uid, _isoTickets());
     } else {
       _ticketExpiries = stored.map(DateTime.parse).toList();
       _purgeExpiredTickets();
@@ -174,7 +174,10 @@ class PinProvider extends ChangeNotifier {
   List<String> _isoTickets() =>
       _ticketExpiries.map((e) => e.toIso8601String()).toList();
 
-  void _persistTickets() => _settings.saveTicketExpiries(_isoTickets());
+  void _persistTickets() {
+    final uid = _user?.uid;
+    if (uid != null) _settings.saveTicketExpiries(uid, _isoTickets());
+  }
 
   void _purgeExpiredTickets() {
     final now = DateTime.now();
@@ -310,13 +313,13 @@ class PinProvider extends ChangeNotifier {
 
   Future<void> init() async {
     _user = await _auth.currentUser(); // 自動ログインはしない（メール登録必須）
-    await _loadTickets();
     _blockedAuthors = await _settings.loadBlockedAuthors();
     _reportedPins = await _settings.loadReportedPins();
     _savedPins = await _settings.loadSavedPins();
     _privacy = await _settings.loadPrivacy();
     _accounts = await _directory.all();
     if (_user != null) {
+      await _loadTickets(_user!.uid);
       _following = await _settings.loadFollowing(_user!.uid);
       _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
       await _applyDailyLogin();
@@ -362,6 +365,7 @@ class PinProvider extends ChangeNotifier {
         password: password,
         displayName: displayName,
         email: email);
+    await _loadTickets(_user!.uid);
     _following = await _settings.loadFollowing(_user!.uid);
     _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
     _startPinSubscription(); // ログイン後にピン購読を開始（Firebaseは認証必須）
@@ -369,9 +373,14 @@ class PinProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// パスワード再設定メールを送信する（ログイン前に使う想定）。
+  Future<void> sendPasswordReset(String username) =>
+      _auth.sendPasswordReset(username: username);
+
   Future<void> signIn(
       {required String username, required String password}) async {
     _user = await _auth.signIn(username: username, password: password);
+    await _loadTickets(_user!.uid);
     _following = await _settings.loadFollowing(_user!.uid);
     _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
     _startPinSubscription();
@@ -384,6 +393,7 @@ class PinProvider extends ChangeNotifier {
     _user = null;
     _following = {};
     _unlockedPinIds = {};
+    _ticketExpiries = [];
     // Firebaseは未認証で読み続けると権限エラーになるため購読停止。
     if (AppConfig.useFirebase) {
       await _pinsSub?.cancel();
@@ -402,6 +412,7 @@ class PinProvider extends ChangeNotifier {
     _user = null;
     _following = {};
     _unlockedPinIds = {};
+    _ticketExpiries = [];
     notifyListeners();
   }
 

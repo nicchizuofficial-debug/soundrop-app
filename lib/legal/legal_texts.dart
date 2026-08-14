@@ -5,7 +5,7 @@
 library;
 
 const String kTermsJa = '''
-SounDrop 利用規約（テンプレート）
+SounDrop 利用規約
 
 最終更新日: 2026-06-07
 
@@ -46,7 +46,7 @@ SounDrop 利用規約（テンプレート）
 ''';
 
 const String kPrivacyJa = '''
-SounDrop プライバシーポリシー（テンプレート）
+SounDrop プライバシーポリシー
 
 最終更新日: 2026-06-07
 

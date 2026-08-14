@@ -52,21 +52,23 @@ class FakePinDataSource implements PinDataSource {
 /// テスト用の設定ストア（メモリ保持）。
 class FakeSettingsStore implements SettingsStore {
   FakeSettingsStore([int initialTickets = 2])
-      : _ticketExpiries = List.generate(
+      : _initialTicketExpiries = List.generate(
             initialTickets,
             (_) => DateTime.now()
                 .add(const Duration(days: 180))
                 .toIso8601String());
-  List<String>? _ticketExpiries;
+  final List<String> _initialTicketExpiries;
+  final Map<String, List<String>> _ticketsByUid = {};
   Set<String> blocked = {};
   Set<String> reported = {};
 
   @override
-  Future<List<String>?> loadTicketExpiries() async => _ticketExpiries;
+  Future<List<String>?> loadTicketExpiries(String uid) async =>
+      _ticketsByUid[uid] ?? _initialTicketExpiries;
 
   @override
-  Future<void> saveTicketExpiries(List<String> e) async =>
-      _ticketExpiries = e;
+  Future<void> saveTicketExpiries(String uid, List<String> e) async =>
+      _ticketsByUid[uid] = e;
 
   @override
   Future<Set<String>> loadBlockedAuthors() async => blocked;
@@ -175,6 +177,9 @@ class FakeAuthService implements AuthService {
   Future<AppUser> signIn(
           {required String username, required String password}) async =>
       _user!;
+
+  @override
+  Future<void> sendPasswordReset({required String username}) async {}
 
   @override
   Future<AppUser> updateProfile(

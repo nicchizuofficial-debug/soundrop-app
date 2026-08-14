@@ -7,10 +7,11 @@ import '../models/privacy_settings.dart';
 /// ユーザー単位の軽量設定（所持チケット・ブロック/通報など）の保存先。
 /// テストではフェイク実装に差し替えられるよう抽象化している。
 abstract class SettingsStore {
-  /// ワープチケットの有効期限(ISO8601)一覧。1要素=1枚。null=未設定（初回）。
-  /// 期限により前払式支払手段の論点を回避する（docs/operator_legal.md）。
-  Future<List<String>?> loadTicketExpiries();
-  Future<void> saveTicketExpiries(List<String> isoExpiries);
+  /// ワープチケットの有効期限(ISO8601)一覧（ユーザー単位）。1要素=1枚。
+  /// null=未設定（初回）。期限により前払式支払手段の論点を回避する
+  /// （docs/operator_legal.md）。
+  Future<List<String>?> loadTicketExpiries(String uid);
+  Future<void> saveTicketExpiries(String uid, List<String> isoExpiries);
 
   /// ブロックした投稿者ID（これらの投稿は地図/一覧から除外する）。
   Future<Set<String>> loadBlockedAuthors();
@@ -43,21 +44,21 @@ abstract class SettingsStore {
 
 /// SharedPreferences 実装。
 class PrefsSettingsStore implements SettingsStore {
-  static const _ticketsKey = 'warp_ticket_expiries_v1';
+  static const _ticketsKeyPrefix = 'warp_ticket_expiries_v1_';
   static const _blockedKey = 'blocked_authors_v1';
   static const _reportedKey = 'reported_pins_v1';
   static const _savedKey = 'saved_pins_v1';
 
   @override
-  Future<List<String>?> loadTicketExpiries() async {
+  Future<List<String>?> loadTicketExpiries(String uid) async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getStringList(_ticketsKey); // 未設定なら null
+    return prefs.getStringList('$_ticketsKeyPrefix$uid'); // 未設定なら null
   }
 
   @override
-  Future<void> saveTicketExpiries(List<String> isoExpiries) async {
+  Future<void> saveTicketExpiries(String uid, List<String> isoExpiries) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_ticketsKey, isoExpiries);
+    await prefs.setStringList('$_ticketsKeyPrefix$uid', isoExpiries);
   }
 
   @override

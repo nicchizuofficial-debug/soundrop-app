@@ -28,6 +28,9 @@ abstract class AuthService {
     required String password,
   });
 
+  /// パスワード再設定メールを送信する。
+  Future<void> sendPasswordReset({required String username});
+
   /// プロフィール（表示名・ログインID・自己紹介・画像）を更新。
   Future<AppUser> updateProfile({
     String? displayName,
@@ -147,6 +150,13 @@ class LocalAuthService implements AuthService {
     await p.setString(_currentKey, key);
     await _touch(p);
     return _toUser(key, m);
+  }
+
+  @override
+  Future<void> sendPasswordReset({required String username}) async {
+    // ローカル（デモ）モードはメール送信基盤が無いため未対応。
+    throw AuthException(
+        'ローカルモードではパスワード再設定に対応していません。Firebaseモードでご利用ください');
   }
 
   @override
