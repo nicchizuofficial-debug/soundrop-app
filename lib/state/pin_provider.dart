@@ -217,10 +217,17 @@ class PinProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// ユーザー名／表示名で検索。
+  /// 公式アカウントのログインID。検索前でも常に表示する。
+  static const _officialUsername = 'soundrop';
+
+  /// ユーザー名／表示名で検索。未入力時は公式アカウントのみ表示する。
   List<Account> searchAccounts(String query) {
     final q = query.trim().toLowerCase();
-    if (q.isEmpty) return accounts;
+    if (q.isEmpty) {
+      return accounts
+          .where((a) => a.username.toLowerCase() == _officialUsername)
+          .toList();
+    }
     return accounts
         .where((a) =>
             a.username.toLowerCase().contains(q) ||

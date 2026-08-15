@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
 
 import '../models/pin_model.dart';
 import '../state/pin_provider.dart';
 import '../theme/app_theme.dart';
-import '../widgets/audio_player_widget.dart';
-import '../widgets/mini_waveform.dart';
 import '../widgets/user_avatar.dart';
 import 'auth_screen.dart';
 import 'follow_list_screen.dart';
+import 'map_screen.dart';
 import 'profile_settings_screen.dart';
 
 /// プロフィール画面。自分（フォロー/フォロワー一覧つき・編集）と他人の両対応。
@@ -170,8 +170,23 @@ class ProfileScreen extends StatelessWidget {
                   child: Text(isSelf ? 'まだドロップがありません。' : '公開中のドロップはありません。',
                       textAlign: TextAlign.center),
                 )
-              else
-                ...drops.map((p) => _DropTile(pin: p)),
+              else ...[
+                // この人のドロップだけに絞った地図で、まとめて場所を確認できる。
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.map_outlined),
+                    label: Text('$nameのドロップを地図で見る（${drops.length}件）'),
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => MapScreen(
+                              filterOwnerId: uid,
+                              filterOwnerName: name,
+                            ))),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...drops.map((p) => _DropTile(uid: uid, name: name, pin: p)),
+              ],
               const SizedBox(height: 24),
             ],
           );
@@ -208,9 +223,13 @@ class _Stat extends StatelessWidget {
   }
 }
 
+/// タップすると、このドロップの位置を中心にした絞り込み地図へ遷移する
+/// （地図側で解禁済みなら再生、未解禁なら距離表示・ワープ解禁ができる）。
 class _DropTile extends StatelessWidget {
+  final String uid;
+  final String name;
   final PinModel pin;
-  const _DropTile({required this.pin});
+  const _DropTile({required this.uid, required this.name, required this.pin});
 
   @override
   Widget build(BuildContext context) {
@@ -221,31 +240,13 @@ class _DropTile extends StatelessWidget {
           color: playable ? const Color(0xFF2BB3A3) : const Color(0xFF6B72C9)),
       title: Text(pin.title.isEmpty ? '無題のドロップ' : pin.title),
       subtitle: Text(playable ? '解禁済み' : '現地（50m）またはワープで解禁'),
-      onTap: () {
-        if (!playable) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('現地に近づくかワープチケットで解禁してください')));
-          return;
-        }
-        showModalBottomSheet<void>(
-          context: context,
-          showDragHandle: true,
-          builder: (sheetContext) => Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(pin.title.isEmpty ? '無題のドロップ' : pin.title,
-                    style: Theme.of(sheetContext).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                MiniWaveform(seed: pin.id, data: pin.waveform, height: 40),
-                const SizedBox(height: 8),
-                AudioPlayerWidget.fromPin(pin, key: ValueKey(pin.id)),
-              ],
-            ),
-          ),
-        );
-      },
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => MapScreen(
+                filterOwnerId: uid,
+                filterOwnerName: name,
+                focusLatLng: LatLng(pin.latitude, pin.longitude),
+              ))),
     );
   }
 }

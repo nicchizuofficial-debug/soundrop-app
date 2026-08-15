@@ -37,7 +37,22 @@ class MapScreen extends StatefulWidget {
   /// 地図ビューの差し替え用（既定は flutter_map）。ウィジェットテストでモック化する。
   final MapViewBuilder? mapViewBuilder;
 
-  const MapScreen({super.key, this.mapViewBuilder});
+  /// 指定すると、このユーザーの公開ドロップだけに絞った地図表示になる
+  /// （プロフィール画面の「地図で見る」から遷移。誰のピンか分からなくなるのを防ぐ）。
+  final String? filterOwnerId;
+  final String? filterOwnerName;
+
+  /// 絞り込み表示の初期中心。プロフィールの一覧から特定のドロップを選んだ場合、
+  /// その位置を優先する（未指定なら最新ドロップの位置）。
+  final LatLng? focusLatLng;
+
+  const MapScreen({
+    super.key,
+    this.mapViewBuilder,
+    this.filterOwnerId,
+    this.filterOwnerName,
+    this.focusLatLng,
+  });
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -47,32 +62,52 @@ class _MapScreenState extends State<MapScreen> {
   /// 仙台駅周辺を初期表示。
   static const _initialCenter = LatLng(38.2601, 140.8824);
 
+  bool get _isFiltered => widget.filterOwnerId != null;
+
   final MapController _controller = MapController();
 
   @override
   void initState() {
     super.initState();
-    // 初回フレーム後に現在地取得＋連続ログイン報酬の通知。
+    // 初回フレーム後に現在地取得。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final provider = context.read<PinProvider>();
       await provider.updateCurrentLocation();
-      final loc = provider.currentLatLng;
-      // initialCenter はFlutterMap生成時のみ有効なため、取得後は明示的にカメラを移動させる。
-      if (loc != null && mounted) {
-        _controller.move(loc, _controller.camera.zoom);
+
+      // 特定ユーザー絞り込み表示は、指定位置（無ければ最新ドロップの位置）を優先して映す。
+      LatLng? target = widget.focusLatLng;
+      if (target == null && _isFiltered) {
+        final pins = provider.pinsByOwner(widget.filterOwnerId!);
+        if (pins.isNotEmpty) {
+          target = LatLng(pins.first.latitude, pins.first.longitude);
+        }
       }
-      final reward = provider.consumePendingReward();
-      if (reward > 0 && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('🎉 7日連続ログイン達成！ワープチケットを$reward枚プレゼント')));
+      target ??= provider.currentLatLng;
+
+      // initialCenter はFlutterMap生成時のみ有効なため、取得後は明示的にカメラを移動させる。
+      if (target != null && mounted) {
+        _controller.move(target, _controller.camera.zoom);
+      }
+
+      // 連続ログイン報酬の通知は通常のホーム地図でのみ（絞り込み表示では出さない）。
+      if (!_isFiltered) {
+        final reward = provider.consumePendingReward();
+        if (reward > 0 && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('🎉 7日連続ログイン達成！ワープチケットを$reward枚プレゼント')));
+        }
       }
     });
   }
 
   /// 時間フィルタ済みピンを flutter_map のマーカーに変換。
+  /// 絞り込み表示中は指定ユーザーの公開ドロップのみを対象にする。
   List<Marker> _buildMarkers(PinProvider provider) {
     final now = DateTime.now();
-    final markers = provider.visiblePins.map((pin) {
+    final pins = _isFiltered
+        ? provider.pinsByOwner(widget.filterOwnerId!)
+        : provider.visiblePins;
+    final markers = pins.map((pin) {
       final pending = provider.isMine(pin) && !pin.isVisibleAt(now);
       final unlocked = provider.canPlay(pin);
       final kind = pending
@@ -472,7 +507,12 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    if (_isFiltered) {
+      return _buildScaffold(
+        appBar: AppBar(title: Text('${widget.filterOwnerName ?? ''}さんのドロップ')),
+      );
+    }
+    return _buildScaffold(
       appBar: AppBar(
         title: Row(
           children: [
@@ -555,6 +595,12 @@ class _MapScreenState extends State<MapScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildScaffold({required PreferredSizeWidget appBar}) {
+    return Scaffold(
+      appBar: appBar,
       body: Consumer<PinProvider>(
         builder: (context, provider, _) {
           // 永続データの読込中はロゴ付きローダー。
@@ -574,7 +620,8 @@ class _MapScreenState extends State<MapScreen> {
                       provider.locationStatus == LocationStatus.granted,
                     ),
                     // フィードが空（フォロー先が無い/未公開のみ）のときの誘導。
-                    if (provider.visiblePins.isEmpty)
+                    // 絞り込み表示（特定ユーザーのドロップ）には出さない。
+                    if (!_isFiltered && provider.visiblePins.isEmpty)
                       const _EmptyFeedHint(),
                   ],
                 ),
@@ -601,13 +648,15 @@ class _MapScreenState extends State<MapScreen> {
               }
             },
           ),
-          const SizedBox(height: 12),
-          // ブランドグラデーションのドロップボタン。
-          _GradientPillButton(
-            icon: AppIcons.drop,
-            label: 'ドロップ',
-            onTap: _openDropScreen,
-          ),
+          // ドロップ投稿は自分のホーム地図でのみ（絞り込み表示では出さない）。
+          if (!_isFiltered) ...[
+            const SizedBox(height: 12),
+            _GradientPillButton(
+              icon: AppIcons.drop,
+              label: 'ドロップ',
+              onTap: _openDropScreen,
+            ),
+          ],
         ],
       ),
     );
