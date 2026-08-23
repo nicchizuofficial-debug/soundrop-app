@@ -31,16 +31,17 @@ workflows:
           # 証明書＋秘密鍵）の再利用を試みる。ここで毎回 certificates create すると
           # Apple 側の配布証明書の上限に達して 409 エラーになるため、
           # 新規作成は「既存が見つからない場合のみ」に限定する。
+          # 同じ証明書を certificates create と fetch-signing-files --create の
+          # 両方で二重に作成・保存すると、片方（または両方）のp12が壊れた状態で
+          # keychain に取り込まれ、署名が不完全になる（Apple審査でITMS-90035
+          # Invalid Signature の原因になった）。新規作成は fetch-signing-files
+          # --create 一本にまとめ、二重保存を避ける。
           if app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
               --type IOS_APP_STORE; then
             echo "既存の署名ファイルを再利用しました"
           else
             echo "再利用できる証明書が無いため新規作成します"
             ssh-keygen -t rsa -b 2048 -m PEM -f /tmp/cert_key.pem -q -N ""
-            app-store-connect certificates create \
-              --type IOS_DISTRIBUTION \
-              --certificate-key=@file:/tmp/cert_key.pem \
-              --save
             app-store-connect fetch-signing-files "com.nicchizu.soundDrop" \
               --type IOS_APP_STORE \
               --certificate-key=@file:/tmp/cert_key.pem \
