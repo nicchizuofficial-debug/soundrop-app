@@ -324,8 +324,8 @@ class PinProvider extends ChangeNotifier {
     _reportedPins = await _settings.loadReportedPins();
     _savedPins = await _settings.loadSavedPins();
     _privacy = await _settings.loadPrivacy();
-    _accounts = await _directory.all();
     if (_user != null) {
+      await _loadAccountDirectory();
       await _loadTickets(_user!.uid);
       _following = await _settings.loadFollowing(_user!.uid);
       _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
@@ -351,6 +351,17 @@ class PinProvider extends ChangeNotifier {
 
   // ---- 認証（メール登録必須） ----
 
+  /// アカウント名簿を読み込む。Firestore の users は認証必須のルールのため、
+  /// 未ログインで呼ぶと permission-denied になる（呼び出し側で認証後にのみ呼ぶこと）。
+  /// 失敗しても init()/signIn()/signUp() 全体を止めないよう、ここで確実に catch する。
+  Future<void> _loadAccountDirectory() async {
+    try {
+      _accounts = await _directory.all();
+    } catch (_) {
+      // 名簿が空でもアプリ自体は使えるべきなので、失敗は握りつぶす。
+    }
+  }
+
   /// ピン購読を開始（多重購読しない）。
   void _startPinSubscription() {
     if (_pinsSub != null) return;
@@ -372,6 +383,7 @@ class PinProvider extends ChangeNotifier {
         password: password,
         displayName: displayName,
         email: email);
+    await _loadAccountDirectory();
     await _loadTickets(_user!.uid);
     _following = await _settings.loadFollowing(_user!.uid);
     _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
@@ -387,6 +399,7 @@ class PinProvider extends ChangeNotifier {
   Future<void> signIn(
       {required String username, required String password}) async {
     _user = await _auth.signIn(username: username, password: password);
+    await _loadAccountDirectory();
     await _loadTickets(_user!.uid);
     _following = await _settings.loadFollowing(_user!.uid);
     _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
