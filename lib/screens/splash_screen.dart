@@ -34,7 +34,11 @@ class _SplashScreenState extends State<SplashScreen>
 
   Future<void> _maybeGo() async {
     final provider = context.read<PinProvider>();
-    while (mounted && !provider.isLoaded) {
+    // 読込が終わらない場合でも最大 maxWait で先へ進む（スプラッシュ固着防止）。
+    const maxWait = Duration(seconds: 10);
+    while (mounted &&
+        !provider.isLoaded &&
+        DateTime.now().difference(_start) < maxWait) {
       await Future<void>.delayed(const Duration(milliseconds: 50));
     }
     final elapsed = DateTime.now().difference(_start);

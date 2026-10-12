@@ -41,6 +41,10 @@ abstract class AuthService {
 
   Future<void> signOut();
 
+  /// 現在のユーザーのパスワードを再確認する（退会など重要操作の前に呼ぶ）。
+  /// 違えば [AuthException]。
+  Future<void> reauthenticate(String password);
+
   /// アカウントを削除（退会）。App Store の要件。
   Future<void> deleteAccount();
 }
@@ -155,8 +159,7 @@ class LocalAuthService implements AuthService {
   @override
   Future<void> sendPasswordReset({required String username}) async {
     // ローカル（デモ）モードはメール送信基盤が無いため未対応。
-    throw AuthException(
-        'ローカルモードではパスワード再設定に対応していません。Firebaseモードでご利用ください');
+    throw AuthException('ローカルモードではパスワード再設定に対応していません。Firebaseモードでご利用ください');
   }
 
   @override
@@ -180,7 +183,8 @@ class LocalAuthService implements AuthService {
     if (avatarPath != null) m['avatarPath'] = avatarPath;
 
     var newKey = cur;
-    if (username != null && _norm(username).isNotEmpty &&
+    if (username != null &&
+        _norm(username).isNotEmpty &&
         _norm(username) != cur) {
       newKey = _norm(username);
       if (users.containsKey(newKey)) {
@@ -200,6 +204,16 @@ class LocalAuthService implements AuthService {
     final p = await SharedPreferences.getInstance();
     await p.remove(_currentKey);
     await p.remove(_lastActiveKey);
+  }
+
+  @override
+  Future<void> reauthenticate(String password) async {
+    final p = await SharedPreferences.getInstance();
+    final key = p.getString(_currentKey);
+    final m =
+        key == null ? null : (await _users(p))[key] as Map<String, dynamic>?;
+    if (m == null) throw AuthException('ログインが必要です');
+    if (m['password'] != password) throw AuthException('パスワードが違います');
   }
 
   @override

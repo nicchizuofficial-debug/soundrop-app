@@ -17,6 +17,20 @@ class FirebaseAuthService implements AuthService {
 
   String _norm(String u) => u.replaceAll('@', '').trim().toLowerCase();
 
+  /// Firestore/Auth の例外を利用者向けの [AuthException] に変換して投げ直す。
+  /// （画面に「[cloud_firestore/unavailable] ...」等の生メッセージを出さない）
+  Future<T> _guard<T>(Future<T> Function() body) async {
+    try {
+      return await body();
+    } on AuthException {
+      rethrow;
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_msg(e));
+    } on FirebaseException catch (e) {
+      throw AuthException(_firestoreMsg(e));
+    }
+  }
+
   Future<AppUser> _profile(User u) async {
     final doc = await _db.collection('users').doc(u.uid).get();
     final m = doc.data() ?? {};
@@ -52,78 +66,72 @@ class FirebaseAuthService implements AuthService {
     required String password,
     required String displayName,
     String email = '',
-  }) async {
-    final id = _norm(username);
-    if (id.isEmpty) throw AuthException('ログインIDを入力してください');
-    if (password.length < 6) throw AuthException('パスワードは6文字以上にしてください');
-    final unameRef = _db.collection('usernames').doc(id);
-    if ((await unameRef.get()).exists) {
-      throw AuthException('このログインIDは既に使われています');
-    }
-    final mail = email.trim().isEmpty ? '$id@sounddrop.app' : email.trim();
-    try {
-      final cred = await _auth.createUserWithEmailAndPassword(
-          email: mail, password: password);
-      final uid = cred.user!.uid;
-      final name = displayName.trim().isEmpty ? id : displayName.trim();
-      await cred.user!.updateDisplayName(name);
-      await unameRef.set({'email': mail, 'uid': uid});
-      await _db.collection('users').doc(uid).set({
-        'username': id,
-        'displayName': name,
-        'email': mail,
-        'bio': '',
-        'lastActiveAt': FieldValue.serverTimestamp(),
+  }) =>
+      _guard(() async {
+        final id = _norm(username);
+        if (id.isEmpty) throw AuthException('ログインIDを入力してください');
+        if (password.length < 6) throw AuthException('パスワードは6文字以上にしてください');
+        final unameRef = _db.collection('usernames').doc(id);
+        if ((await unameRef.get()).exists) {
+          throw AuthException('このログインIDは既に使われています');
+        }
+        final mail = email.trim().isEmpty ? '$id@sounddrop.app' : email.trim();
+        final cred = await _auth.createUserWithEmailAndPassword(
+            email: mail, password: password);
+        final uid = cred.user!.uid;
+        final name = displayName.trim().isEmpty ? id : displayName.trim();
+        await cred.user!.updateDisplayName(name);
+        await unameRef.set({'email': mail, 'uid': uid});
+        await _db.collection('users').doc(uid).set({
+          'username': id,
+          'displayName': name,
+          'email': mail,
+          'bio': '',
+          'lastActiveAt': FieldValue.serverTimestamp(),
+        });
+        return _profile(cred.user!);
       });
-      return _profile(cred.user!);
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_msg(e));
-    }
-  }
 
   @override
   Future<AppUser> signIn({
     required String username,
     required String password,
-  }) async {
-    final id = _norm(username);
-    final doc = await _db.collection('usernames').doc(id).get();
-    final email = doc.data()?['email'] as String?;
-    if (email == null) throw AuthException('このログインIDは登録されていません');
-    try {
-      final cred = await _auth.signInWithEmailAndPassword(
-          email: email, password: password);
-      await _db.collection('users').doc(cred.user!.uid).set(
-          {'lastActiveAt': FieldValue.serverTimestamp()},
-          SetOptions(merge: true));
-      return _profile(cred.user!);
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(e.code == 'wrong-password' ||
-              e.code == 'invalid-credential'
-          ? 'パスワードが違います'
-          : _msg(e));
-    }
-  }
+  }) =>
+      _guard(() async {
+        final id = _norm(username);
+        final doc = await _db.collection('usernames').doc(id).get();
+        final email = doc.data()?['email'] as String?;
+        if (email == null) throw AuthException('このログインIDは登録されていません');
+        try {
+          final cred = await _auth.signInWithEmailAndPassword(
+              email: email, password: password);
+          await _db.collection('users').doc(cred.user!.uid).set(
+              {'lastActiveAt': FieldValue.serverTimestamp()},
+              SetOptions(merge: true));
+          return _profile(cred.user!);
+        } on FirebaseAuthException catch (e) {
+          throw AuthException(
+              e.code == 'wrong-password' || e.code == 'invalid-credential'
+                  ? 'パスワードが違います'
+                  : _msg(e));
+        }
+      });
 
   @override
-  Future<void> sendPasswordReset({required String username}) async {
-    final id = _norm(username);
-    final doc = await _db.collection('usernames').doc(id).get();
-    final email = doc.data()?['email'] as String?;
-    if (email == null) throw AuthException('このログインIDは登録されていません');
-    // signUp時にメール未入力だと仮のダミードメインで登録される（signIn等参照）。
-    // その場合は本人が受け取れる宛先が無いため、その旨を案内する。
-    if (email.endsWith('@sounddrop.app')) {
-      throw AuthException(
-          'このアカウントにはメールアドレスが登録されていません。'
-          'お手数ですが nicchizu.official@gmail.com までお問い合わせください');
-    }
-    try {
-      await _auth.sendPasswordResetEmail(email: email);
-    } on FirebaseAuthException catch (e) {
-      throw AuthException(_msg(e));
-    }
-  }
+  Future<void> sendPasswordReset({required String username}) =>
+      _guard(() async {
+        final id = _norm(username);
+        final doc = await _db.collection('usernames').doc(id).get();
+        final email = doc.data()?['email'] as String?;
+        if (email == null) throw AuthException('このログインIDは登録されていません');
+        // signUp時にメール未入力だと仮のダミードメインで登録される（signIn等参照）。
+        // その場合は本人が受け取れる宛先が無いため、その旨を案内する。
+        if (email.endsWith('@sounddrop.app')) {
+          throw AuthException('このアカウントにはメールアドレスが登録されていません。'
+              'お手数ですが nicchizu.official@gmail.com までお問い合わせください');
+        }
+        await _auth.sendPasswordResetEmail(email: email);
+      });
 
   @override
   Future<AppUser> updateProfile({
@@ -131,61 +139,89 @@ class FirebaseAuthService implements AuthService {
     String? username,
     String? bio,
     String? avatarPath,
-  }) async {
-    final u = _auth.currentUser;
-    if (u == null) throw AuthException('ログインが必要です');
-    final ref = _db.collection('users').doc(u.uid);
-    final cur = (await ref.get()).data() ?? {};
-    final data = <String, dynamic>{};
-    if (displayName != null && displayName.trim().isNotEmpty) {
-      data['displayName'] = displayName.trim();
-      await u.updateDisplayName(displayName.trim());
-    }
-    if (bio != null) data['bio'] = bio.trim();
-    if (avatarPath != null) data['avatarUrl'] = avatarPath; // 必要なら Storage URL に
-    if (username != null &&
-        _norm(username).isNotEmpty &&
-        _norm(username) != cur['username']) {
-      final id = _norm(username);
-      final unameRef = _db.collection('usernames').doc(id);
-      if ((await unameRef.get()).exists) {
-        throw AuthException('このログインIDは既に使われています');
-      }
-      await unameRef.set({'email': u.email, 'uid': u.uid});
-      if (cur['username'] != null) {
-        await _db
-            .collection('usernames')
-            .doc(cur['username'] as String)
-            .delete();
-      }
-      data['username'] = id;
-    }
-    if (data.isNotEmpty) await ref.set(data, SetOptions(merge: true));
-    return _profile(u);
-  }
+  }) =>
+      _guard(() async {
+        final u = _auth.currentUser;
+        if (u == null) throw AuthException('ログインが必要です');
+        final ref = _db.collection('users').doc(u.uid);
+        final cur = (await ref.get()).data() ?? {};
+        final data = <String, dynamic>{};
+        if (displayName != null && displayName.trim().isNotEmpty) {
+          data['displayName'] = displayName.trim();
+          await u.updateDisplayName(displayName.trim());
+        }
+        if (bio != null) data['bio'] = bio.trim();
+        if (avatarPath != null)
+          data['avatarUrl'] = avatarPath; // 必要なら Storage URL に
+        if (username != null &&
+            _norm(username).isNotEmpty &&
+            _norm(username) != cur['username']) {
+          final id = _norm(username);
+          final unameRef = _db.collection('usernames').doc(id);
+          if ((await unameRef.get()).exists) {
+            throw AuthException('このログインIDは既に使われています');
+          }
+          await unameRef.set({'email': u.email, 'uid': u.uid});
+          if (cur['username'] != null) {
+            await _db
+                .collection('usernames')
+                .doc(cur['username'] as String)
+                .delete();
+          }
+          data['username'] = id;
+        }
+        if (data.isNotEmpty) await ref.set(data, SetOptions(merge: true));
+        return _profile(u);
+      });
 
   @override
   Future<void> signOut() => _auth.signOut();
 
   @override
-  Future<void> deleteAccount() async {
-    final u = _auth.currentUser;
-    if (u == null) return;
-    final uid = u.uid;
-    final username =
-        (await _db.collection('users').doc(uid).get()).data()?['username']
-            as String?;
-    if (username != null) {
-      await _db.collection('usernames').doc(username).delete();
-    }
-    await _db.collection('users').doc(uid).delete();
-    await u.delete();
-  }
+  Future<void> reauthenticate(String password) => _guard(() async {
+        final u = _auth.currentUser;
+        final email = u?.email;
+        if (u == null || email == null) throw AuthException('ログインが必要です');
+        try {
+          await u.reauthenticateWithCredential(
+              EmailAuthProvider.credential(email: email, password: password));
+        } on FirebaseAuthException catch (e) {
+          throw AuthException(
+              e.code == 'wrong-password' || e.code == 'invalid-credential'
+                  ? 'パスワードが違います'
+                  : _msg(e));
+        }
+      });
+
+  @override
+  Future<void> deleteAccount() => _guard(() async {
+        final u = _auth.currentUser;
+        if (u == null) return;
+        final uid = u.uid;
+        final username = (await _db.collection('users').doc(uid).get())
+            .data()?['username'] as String?;
+        if (username != null) {
+          await _db.collection('usernames').doc(username).delete();
+        }
+        await _db.collection('users').doc(uid).delete();
+        await u.delete();
+      });
 
   String _msg(FirebaseAuthException e) => switch (e.code) {
         'email-already-in-use' => 'このメールアドレスは既に登録されています',
+        'invalid-email' => 'メールアドレスの形式が正しくありません',
         'weak-password' => 'パスワードは6文字以上にしてください',
         'user-not-found' => 'このログインIDは登録されていません',
+        'user-disabled' => 'このアカウントは利用停止されています',
+        'too-many-requests' => '試行回数が多すぎます。しばらく待ってから再度お試しください',
+        'network-request-failed' => '通信に失敗しました。接続を確認して再度お試しください',
+        'requires-recent-login' => '安全のため、もう一度パスワードを入力してください',
         _ => '認証に失敗しました（${e.code}）',
+      };
+
+  String _firestoreMsg(FirebaseException e) => switch (e.code) {
+        'unavailable' || 'deadline-exceeded' => '通信に失敗しました。接続を確認して再度お試しください',
+        'permission-denied' => 'この操作を行う権限がありません',
+        _ => '処理に失敗しました（${e.code}）',
       };
 }

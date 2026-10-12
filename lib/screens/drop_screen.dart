@@ -60,6 +60,9 @@ class _DropScreenState extends State<DropScreen> {
   /// プレビュー（自動再生）トリガ。増やすとプレイヤーを作り直して頭出し再生。
   int _previewNonce = 0;
 
+  /// ドロップ（アップロード）中。二重投稿防止とローディング表示に使う。
+  bool _dropping = false;
+
   Future<void> _startRecording() async {
     if (!await _recorder.hasPermission()) {
       _showSnack('マイクの権限がありません');
@@ -143,26 +146,34 @@ class _DropScreenState extends State<DropScreen> {
     return (clamped - floor) / -floor;
   }
 
-  void _drop() {
+  Future<void> _drop() async {
     final path = _recordedPath;
-    if (path == null) return;
+    if (path == null || _dropping) return;
 
-    final pin = context.read<PinProvider>().dropPin(
-          audioPath: path,
-          title: _titleController.text.trim().isEmpty
-              ? '無題のドロップ'
-              : _titleController.text.trim(),
-          lockDuration: _selectedLock,
-          waveform: _trimmedWaveform(),
-          trimStartMs: _isTrimmed ? _clipStart.inMilliseconds : null,
-          trimEndMs: _isTrimmed ? _clipEnd.inMilliseconds : null,
-        );
-
-    if (pin == null) {
-      _showSnack('現在地が取得できていません。マップで現在地を更新してください。');
-      return;
+    setState(() => _dropping = true);
+    try {
+      final pin = await context.read<PinProvider>().dropPin(
+            audioPath: path,
+            title: _titleController.text.trim().isEmpty
+                ? '無題のドロップ'
+                : _titleController.text.trim(),
+            lockDuration: _selectedLock,
+            waveform: _trimmedWaveform(),
+            trimStartMs: _isTrimmed ? _clipStart.inMilliseconds : null,
+            trimEndMs: _isTrimmed ? _clipEnd.inMilliseconds : null,
+          );
+      if (!mounted) return;
+      if (pin == null) {
+        _showSnack('現在地が取得できていません。マップで現在地を更新してください。');
+        return;
+      }
+      Navigator.pop(context, true);
+    } catch (_) {
+      // 録音は残っているので、そのまま再試行できる。
+      _showSnack('ドロップに失敗しました。通信環境を確認して、もう一度お試しください。');
+    } finally {
+      if (mounted) setState(() => _dropping = false);
     }
-    Navigator.pop(context, true);
   }
 
   void _showSnack(String msg) {
@@ -203,8 +214,7 @@ class _DropScreenState extends State<DropScreen> {
   @override
   Widget build(BuildContext context) {
     final hasRecording = _recordedPath != null;
-    final progress =
-        _elapsed.inMilliseconds / _maxDuration.inMilliseconds;
+    final progress = _elapsed.inMilliseconds / _maxDuration.inMilliseconds;
 
     return Scaffold(
       appBar: AppBar(title: const Text('音声をドロップ')),
@@ -245,8 +255,9 @@ class _DropScreenState extends State<DropScreen> {
                       backgroundColor: _isRecording ? Colors.red : null,
                     ),
                     icon: Icon(_isRecording ? Icons.stop : Icons.mic),
-                    onPressed:
-                        _isRecording ? _stopRecording : _startRecording,
+                    onPressed: _dropping
+                        ? null
+                        : (_isRecording ? _stopRecording : _startRecording),
                   ),
                   const SizedBox(height: 8),
                   Text(_isRecording
@@ -259,8 +270,7 @@ class _DropScreenState extends State<DropScreen> {
 
             // ---- 試聴プレイヤー＆トリミング（録音後のみ） ----
             if (hasRecording) ...[
-              Text('試聴・トリミング',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Text('試聴・トリミング', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: 8),
               // 波形上のハンドルでトリミング範囲を選択。
               TrimmableWaveform(
@@ -329,8 +339,7 @@ class _DropScreenState extends State<DropScreen> {
                   return ChoiceChip(
                     label: Text(e.key),
                     selected: _selectedLock == e.value,
-                    onSelected: (_) =>
-                        setState(() => _selectedLock = e.value),
+                    onSelected: (_) => setState(() => _selectedLock = e.value),
                   );
                 }).toList(),
               ),
@@ -338,9 +347,15 @@ class _DropScreenState extends State<DropScreen> {
 
               // ---- ドロップ実行 ----
               FilledButton.icon(
-                icon: const Icon(Icons.place),
-                label: const Text('この場所にドロップする'),
-                onPressed: _drop,
+                icon: _dropping
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.place),
+                label: Text(_dropping ? 'アップロード中…' : 'この場所にドロップする'),
+                onPressed: _dropping ? null : _drop,
               ),
             ],
           ],

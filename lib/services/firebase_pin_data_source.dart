@@ -23,9 +23,17 @@ class FirebasePinDataSource implements PinDataSource {
   final FirebaseStorage _storage;
 
   @override
-  Stream<List<PinModel>> watchPins() => _col.snapshots().map(
-        (snap) => snap.docs.map((d) => PinModel.fromJson(d.data())).toList(),
-      );
+  Stream<List<PinModel>> watchPins() => _col.snapshots().map((snap) {
+        // 壊れたドキュメントが1件あってもストリーム全体を止めないよう、
+        // 解析できないものは読み飛ばす。
+        final pins = <PinModel>[];
+        for (final d in snap.docs) {
+          try {
+            pins.add(PinModel.fromJson(d.data()));
+          } catch (_) {}
+        }
+        return pins;
+      });
 
   @override
   Future<void> upsertPin(PinModel pin) async {
@@ -57,11 +65,20 @@ class FirebasePinDataSource implements PinDataSource {
 
   @override
   Future<void> deletePin(String id) async {
+    // 音声は drops/{ownerId}/{id}.m4a にあるので、削除前にドキュメントの
+    // ダウンロードURLから実体の参照を引く（以前は drops/{id} を消そうとして
+    // 実ファイルが Storage に残っていた）。
+    String? audioUrl;
+    try {
+      audioUrl = (await _col.doc(id).get()).data()?['audioUrl'] as String?;
+    } catch (_) {}
     await _col.doc(id).delete();
     // 音声も削除（存在しなくてもエラーにしない）。
-    try {
-      await _storage.ref('drops').child(id).delete();
-    } catch (_) {}
+    if (audioUrl != null && audioUrl.startsWith('http')) {
+      try {
+        await _storage.refFromURL(audioUrl).delete();
+      } catch (_) {}
+    }
   }
 
   @override

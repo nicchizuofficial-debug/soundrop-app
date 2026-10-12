@@ -162,8 +162,7 @@ class PinProvider extends ChangeNotifier {
     final stored = await _settings.loadTicketExpiries(uid);
     if (stored == null) {
       // 初回付与：2枚（180日有効）。
-      _ticketExpiries =
-          List.generate(2, (_) => DateTime.now().add(ticketTtl));
+      _ticketExpiries = List.generate(2, (_) => DateTime.now().add(ticketTtl));
       await _settings.saveTicketExpiries(uid, _isoTickets());
     } else {
       _ticketExpiries = stored.map(DateTime.parse).toList();
@@ -256,8 +255,7 @@ class PinProvider extends ChangeNotifier {
   // 名簿から消えたアカウント（例: 隠されたデモアカウント）へのフォローIDが
   // _following に残っていても数えないよう、一覧（followingAccounts）と揃える。
   int get myFollowingCount => followingAccounts.length;
-  int get myFollowerCount =>
-      _accounts.where((a) => a.followsBack).length;
+  int get myFollowerCount => _accounts.where((a) => a.followsBack).length;
 
   /// 指定アカウントの公開ドロップ（プロフィール表示用）。
   List<PinModel> pinsByOwner(String uid) {
@@ -284,8 +282,7 @@ class PinProvider extends ChangeNotifier {
   }
 
   /// クリエイター収益：自分のドロップに集まった応援の総額・件数（グロス）。
-  int get myGrossEarnings =>
-      myPins.fold(0, (s, p) => s + p.totalTipAmount);
+  int get myGrossEarnings => myPins.fold(0, (s, p) => s + p.totalTipAmount);
   int get myGiftsReceived => myPins.fold(0, (s, p) => s + p.giftCount);
 
   /// 保存（お気に入り）したピンか。
@@ -319,17 +316,27 @@ class PinProvider extends ChangeNotifier {
   // ---- 初期化 ----
 
   Future<void> init() async {
-    _user = await _auth.currentUser(); // 自動ログインはしない（メール登録必須）
-    _blockedAuthors = await _settings.loadBlockedAuthors();
-    _reportedPins = await _settings.loadReportedPins();
-    _savedPins = await _settings.loadSavedPins();
-    _privacy = await _settings.loadPrivacy();
-    if (_user != null) {
-      await _loadAccountDirectory();
-      await _loadTickets(_user!.uid);
-      _following = await _settings.loadFollowing(_user!.uid);
-      _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
-      await _applyDailyLogin();
+    // 起動処理のどこで例外が出てもスプラッシュで固まらないよう、
+    // 失敗は握りつぶして必ず isLoaded を立てる（App Review 2.1a 対策）。
+    try {
+      _user = await _auth.currentUser(); // 自動ログインはしない（メール登録必須）
+    } catch (_) {
+      _user = null; // セッション確認に失敗したら未ログイン扱いでログイン画面へ
+    }
+    try {
+      _blockedAuthors = await _settings.loadBlockedAuthors();
+      _reportedPins = await _settings.loadReportedPins();
+      _savedPins = await _settings.loadSavedPins();
+      _privacy = await _settings.loadPrivacy();
+      if (_user != null) {
+        await _loadAccountDirectory();
+        await _loadTickets(_user!.uid);
+        _following = await _settings.loadFollowing(_user!.uid);
+        _unlockedPinIds = await _settings.loadUnlockedPins(_user!.uid);
+        await _applyDailyLogin();
+      }
+    } catch (_) {
+      // 端末設定の読込失敗は既定値のまま続行する。
     }
 
     // Firebase はピン購読に認証が必要（ルール: read は auth 必須）。
@@ -341,12 +348,18 @@ class PinProvider extends ChangeNotifier {
       // 未ログイン Firebase: ピンはログイン後に読み込む。
       // ここで loaded を立てないとスプラッシュが進めず固まる。
       _loaded = true;
+      notifyListeners();
     }
 
-    _purchase
-      ..onWarpTicketsDelivered = _deliverWarpTickets
-      ..onTipDelivered = (amount, receipt) => _onTipDelivered(amount, receipt);
-    await _purchase.init();
+    try {
+      _purchase
+        ..onWarpTicketsDelivered = _deliverWarpTickets
+        ..onTipDelivered =
+            (amount, receipt) => _onTipDelivered(amount, receipt);
+      await _purchase.init();
+    } catch (_) {
+      // 課金初期化の失敗で起動を止めない。
+    }
   }
 
   // ---- 認証（メール登録必須） ----
@@ -367,6 +380,10 @@ class PinProvider extends ChangeNotifier {
     if (_pinsSub != null) return;
     _pinsSub = _dataSource.watchPins().listen((pins) {
       _pins = pins;
+      _loaded = true;
+      notifyListeners();
+    }, onError: (_) {
+      // 購読エラー（権限・通信など）でも画面は先へ進める。
       _loaded = true;
       notifyListeners();
     });
@@ -410,29 +427,36 @@ class PinProvider extends ChangeNotifier {
 
   Future<void> signOut() async {
     await _auth.signOut();
+    await _clearSession();
+  }
+
+  /// アカウント削除（退会）。自分の投稿も削除する。App Store 要件。
+  ///
+  /// [password] を渡すと最初に本人確認する。Firebase は最終ログインから
+  /// 時間が経つと削除に再認証を要求するため、投稿を消し始める前に確認して
+  /// 「投稿だけ消えてアカウントが残る」中途半端な状態を防ぐ。
+  Future<void> deleteAccount({String? password}) async {
+    if (password != null) await _auth.reauthenticate(password);
+    for (final p in myPins) {
+      await _dataSource.deletePin(p.id);
+    }
+    await _auth.deleteAccount();
+    await _clearSession();
+  }
+
+  /// ログアウト／退会後に、ユーザー固有の状態を破棄する。
+  Future<void> _clearSession() async {
     _user = null;
     _following = {};
     _unlockedPinIds = {};
     _ticketExpiries = [];
+    _accounts = [];
     // Firebaseは未認証で読み続けると権限エラーになるため購読停止。
     if (AppConfig.useFirebase) {
       await _pinsSub?.cancel();
       _pinsSub = null;
       _pins = [];
     }
-    notifyListeners();
-  }
-
-  /// アカウント削除（退会）。自分の投稿も削除する。App Store 要件。
-  Future<void> deleteAccount() async {
-    for (final p in myPins) {
-      await _dataSource.deletePin(p.id);
-    }
-    await _auth.deleteAccount();
-    _user = null;
-    _following = {};
-    _unlockedPinIds = {};
-    _ticketExpiries = [];
     notifyListeners();
   }
 
@@ -520,14 +544,18 @@ class PinProvider extends ChangeNotifier {
 
   // ---- ドロップ ----
 
-  PinModel? dropPin({
+  /// 現在地に音声をドロップする。現在地が無ければ null。
+  ///
+  /// 地図には即座に反映し（楽観的更新）、保存・アップロードの完了まで待つ。
+  /// 失敗したらローカルからも取り除いて例外を投げ直す（呼び出し側で再試行を促す）。
+  Future<PinModel?> dropPin({
     required String audioPath,
     required String title,
     required Duration lockDuration,
     List<double> waveform = const [],
     int? trimStartMs,
     int? trimEndMs,
-  }) {
+  }) async {
     final loc = _currentLatLng;
     if (loc == null) return null;
 
@@ -557,7 +585,13 @@ class PinProvider extends ChangeNotifier {
     );
     _pins = [..._pins, pin];
     notifyListeners();
-    _dataSource.upsertPin(pin);
+    try {
+      await _dataSource.upsertPin(pin);
+    } catch (_) {
+      _pins = _pins.where((p) => p.id != pin.id).toList();
+      notifyListeners();
+      rethrow;
+    }
     return pin;
   }
 
@@ -725,7 +759,12 @@ class PinProvider extends ChangeNotifier {
   void _replacePin(PinModel updated) {
     _pins = _pins.map((p) => p.id == updated.id ? updated : p).toList();
     notifyListeners();
-    _dataSource.upsertPin(updated);
+    // ピンの更新はルール上「投稿者本人のみ」。他人のピン（ワープ解禁など）を
+    // 書き込もうとすると permission-denied になるため、端末内の反映に留める。
+    // 解禁状態は _unlockedPinIds で端末側に永続化済み。
+    if (!AppConfig.useFirebase || isMine(updated)) {
+      _dataSource.upsertPin(updated).catchError((_) {});
+    }
   }
 
   @override

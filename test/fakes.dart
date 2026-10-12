@@ -8,7 +8,8 @@ import 'package:sound_drop/models/report_model.dart';
 import 'package:sound_drop/services/account_directory.dart';
 import 'package:sound_drop/services/auth_service.dart';
 import 'package:sound_drop/services/pin_data_source.dart';
-import 'package:sound_drop/services/purchase_gateway.dart' show PurchaseGateway, GiftReceipt;
+import 'package:sound_drop/services/purchase_gateway.dart'
+    show PurchaseGateway, GiftReceipt;
 import 'package:sound_drop/services/report_sink.dart';
 import 'package:sound_drop/services/settings_store.dart';
 
@@ -93,8 +94,7 @@ class FakeSettingsStore implements SettingsStore {
   final Map<String, Set<String>> following = {};
 
   @override
-  Future<Set<String>> loadFollowing(String uid) async =>
-      following[uid] ?? {};
+  Future<Set<String>> loadFollowing(String uid) async => following[uid] ?? {};
 
   @override
   Future<void> saveFollowing(String uid, Set<String> ownerIds) async =>
@@ -122,8 +122,7 @@ class FakeSettingsStore implements SettingsStore {
   final Map<String, Set<String>> unlocked = {};
 
   @override
-  Future<Set<String>> loadUnlockedPins(String uid) async =>
-      unlocked[uid] ?? {};
+  Future<Set<String>> loadUnlockedPins(String uid) async => unlocked[uid] ?? {};
 
   @override
   Future<void> saveUnlockedPins(String uid, Set<String> ids) async =>
@@ -150,8 +149,7 @@ class FakeReportSink implements ReportSink {
 /// テスト用の認証（既定でログイン済みのユーザーを返す）。
 class FakeAuthService implements AuthService {
   FakeAuthService([String uid = 'test-uid'])
-      : _user = AppUser(
-            uid: uid, email: '$uid@example.com', displayName: uid);
+      : _user = AppUser(uid: uid, email: '$uid@example.com', displayName: uid);
 
   AppUser? _user;
 
@@ -197,6 +195,11 @@ class FakeAuthService implements AuthService {
 
   @override
   Future<void> signOut() async => _user = null;
+
+  @override
+  Future<void> reauthenticate(String password) async {
+    if (password != 'password') throw AuthException('パスワードが違います');
+  }
 
   @override
   Future<void> deleteAccount() async => _user = null;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/privacy_settings.dart';
+import '../models/app_user.dart';
 import '../state/pin_provider.dart';
 import '../theme/app_theme.dart';
 import '../app_config.dart';
@@ -47,10 +48,9 @@ class SettingsScreen extends StatelessWidget {
                 title: const Text('非公開アカウント'),
                 subtitle: const Text('フォローを承認制にする'),
                 value: p.protectedAccount,
-                onChanged: (v) => provider
-                    .updatePrivacy(p.copyWith(protectedAccount: v)),
+                onChanged: (v) =>
+                    provider.updatePrivacy(p.copyWith(protectedAccount: v)),
               ),
-
               _header('プライバシーと安全'),
               ListTile(
                 leading: const Icon(Icons.block),
@@ -85,8 +85,8 @@ class SettingsScreen extends StatelessWidget {
               SwitchListTile(
                 title: const Text('ユーザー名で検索を許可'),
                 value: p.findableByUsername,
-                onChanged: (v) => provider
-                    .updatePrivacy(p.copyWith(findableByUsername: v)),
+                onChanged: (v) =>
+                    provider.updatePrivacy(p.copyWith(findableByUsername: v)),
               ),
               SwitchListTile(
                 title: const Text('メールアドレスで検索を許可'),
@@ -111,7 +111,6 @@ class SettingsScreen extends StatelessWidget {
                 onChanged: (v) =>
                     provider.updatePrivacy(p.copyWith(locationPrecision: v)),
               ),
-
               if (AppConfig.enableTipping) ...[
                 _header('クリエイター'),
                 ListTile(
@@ -123,7 +122,6 @@ class SettingsScreen extends StatelessWidget {
                       builder: (_) => const CreatorEarningsScreen())),
                 ),
               ],
-
               _header('情報'),
               ListTile(
                 leading: const Icon(Icons.description_outlined),
@@ -139,7 +137,6 @@ class SettingsScreen extends StatelessWidget {
                 onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => LegalScreen.privacy())),
               ),
-
               _header('その他'),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.redAccent),
@@ -148,7 +145,8 @@ class SettingsScreen extends StatelessWidget {
                 onTap: () => _logout(context),
               ),
               ListTile(
-                leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
+                leading:
+                    const Icon(Icons.delete_forever, color: Colors.redAccent),
                 title: const Text('アカウントを削除',
                     style: TextStyle(color: Colors.redAccent)),
                 subtitle: const Text('投稿・フォロー等のデータを\n完全に削除します'),
@@ -181,32 +179,96 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
-    final ok = await showDialog<bool>(
+    final password = await showDialog<String>(
       context: context,
-      builder: (d) => AlertDialog(
-        title: const Text('アカウントを削除'),
-        content: const Text(
-            'アカウントと、あなたの投稿・フォロー等のデータを完全に削除します。\n'
-            'この操作は取り消せません。続行しますか？'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(d, false),
-              child: const Text('キャンセル')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-            onPressed: () => Navigator.pop(d, true),
-            child: const Text('削除する'),
-          ),
-        ],
+      builder: (_) => const _DeleteAccountDialog(),
+    );
+    if (password == null || !context.mounted) return;
+
+    // 削除処理中は操作できないようにローディングを出す。
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator()),
       ),
     );
-    if (ok != true) return;
+    String? error;
+    try {
+      await context.read<PinProvider>().deleteAccount(password: password);
+    } on AuthException catch (e) {
+      error = e.message;
+    } catch (_) {
+      error = '削除に失敗しました。通信環境を確認して、もう一度お試しください。';
+    }
     if (!context.mounted) return;
-    await context.read<PinProvider>().deleteAccount();
-    if (!context.mounted) return;
+    Navigator.of(context).pop(); // ローディングを閉じる
+    if (error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const AuthScreen()),
       (route) => false,
+    );
+  }
+}
+
+/// 退会確認ダイアログ。本人確認のためパスワードを入力してもらう。
+/// 「削除する」でパスワード文字列、キャンセルで null を返す。
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _password = TextEditingController();
+
+  @override
+  void dispose() {
+    _password.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('アカウントを削除'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('アカウントと、あなたの投稿・フォロー等のデータを完全に削除します。\n'
+              'この操作は取り消せません。'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _password,
+            obscureText: true,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: '確認のためパスワードを入力',
+              prefixIcon: Icon(Icons.lock_outline),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('キャンセル')),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+          onPressed: _password.text.isEmpty
+              ? null
+              : () => Navigator.pop(context, _password.text),
+          child: const Text('削除する'),
+        ),
+      ],
     );
   }
 }

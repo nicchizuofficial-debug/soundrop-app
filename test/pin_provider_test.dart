@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sound_drop/models/app_user.dart';
 import 'package:sound_drop/models/pin_model.dart';
 import 'package:sound_drop/models/privacy_settings.dart';
 import 'package:sound_drop/models/report_model.dart';
@@ -37,9 +38,10 @@ Future<PinProvider> makeProvider({
   required List<PinModel> pins,
   int tickets = 2,
   bool storeAvailable = false,
+  FakePinDataSource? dataSource,
 }) async {
   final provider = PinProvider(
-    dataSource: FakePinDataSource(pins),
+    dataSource: dataSource ?? FakePinDataSource(pins),
     settingsStore: FakeSettingsStore(tickets),
     purchaseGateway: FakePurchaseGateway(storeAvailable: storeAvailable),
     authService: FakeAuthService(),
@@ -49,6 +51,23 @@ Future<PinProvider> makeProvider({
   await provider.init();
   await pumpEventQueue();
   return provider;
+}
+
+/// アップロード（保存）が必ず失敗するデータソース。
+class _FailingUpsertDataSource extends FakePinDataSource {
+  _FailingUpsertDataSource() : super(const []);
+
+  @override
+  Future<void> upsertPin(PinModel pin) async => throw Exception('offline');
+}
+
+/// ピン購読がエラーを流すデータソース（権限エラー・通信断を想定）。
+class _ErrorStreamDataSource extends FakePinDataSource {
+  _ErrorStreamDataSource() : super(const []);
+
+  @override
+  Stream<List<PinModel>> watchPins() =>
+      Stream<List<PinModel>>.error(Exception('permission-denied'));
 }
 
 void main() {
@@ -91,7 +110,7 @@ void main() {
   group('ドロップ', () {
     test('現在地が無いと null を返す', () async {
       final provider = await makeProvider(pins: []);
-      final pin = provider.dropPin(
+      final pin = await provider.dropPin(
         audioPath: '/tmp/a.m4a',
         title: 't',
         lockDuration: const Duration(hours: 3),
@@ -103,7 +122,7 @@ void main() {
       final provider = await makeProvider(pins: []);
       provider.setLocationForTest(38.2601, 140.8824);
 
-      final pin = provider.dropPin(
+      final pin = await provider.dropPin(
         audioPath: '/tmp/a.m4a',
         title: 'テスト',
         lockDuration: const Duration(hours: 3),
@@ -265,7 +284,8 @@ void main() {
       );
       final provider = await makeProvider(pins: [spam]);
       await provider.blockAuthor('spammer-uid');
-      expect(provider.blockedAccounts.map((b) => b.uid), contains('spammer-uid'));
+      expect(
+          provider.blockedAccounts.map((b) => b.uid), contains('spammer-uid'));
 
       await provider.unblockAuthor('spammer-uid');
       expect(provider.blockedAccounts, isEmpty);
@@ -276,8 +296,8 @@ void main() {
       provider.setLocationForTest(38.260123, 140.882456);
       await provider.updatePrivacy(provider.privacy
           .copyWith(locationPrecision: LocationPrecision.approximate));
-      final pin = provider.dropPin(
-          audioPath: 'a', title: 't', lockDuration: const Duration(hours: 1))!;
+      final pin = (await provider.dropPin(
+          audioPath: 'a', title: 't', lockDuration: const Duration(hours: 1)))!;
       // 小数3桁（約100m）に丸め。
       expect(pin.latitude, 38.26);
       expect(pin.longitude, 140.882);
@@ -286,11 +306,11 @@ void main() {
     test('自分の投稿は通報しても自分には残る（マイドロップ保護）', () async {
       final provider = await makeProvider(pins: []);
       provider.setLocationForTest(38.2601, 140.8824);
-      final pin = provider.dropPin(
+      final pin = (await provider.dropPin(
         audioPath: 'a',
         title: 't',
         lockDuration: const Duration(hours: 1),
-      )!;
+      ))!;
       await provider.reportPin(pin, ReportReason.other);
       expect(provider.myPins.map((p) => p.id), contains(pin.id));
     });
@@ -350,6 +370,51 @@ void main() {
       await provider.toggleSaved('x');
       expect(provider.isSaved(pin), isFalse);
       expect(provider.savedPins, isEmpty);
+    });
+  });
+
+  group('起動の堅牢性（スプラッシュ固着防止）', () {
+    test('ピン購読がエラーでも isLoaded になる', () async {
+      final provider =
+          await makeProvider(pins: [], dataSource: _ErrorStreamDataSource());
+      expect(provider.isLoaded, isTrue);
+    });
+  });
+
+  group('ドロップの保存失敗', () {
+    test('アップロードに失敗したらピンを取り消して例外を投げる', () async {
+      final provider =
+          await makeProvider(pins: [], dataSource: _FailingUpsertDataSource());
+      provider.setLocationForTest(38.2601, 140.8824);
+      await expectLater(
+        provider.dropPin(
+          audioPath: 'a',
+          title: 't',
+          lockDuration: const Duration(hours: 1),
+        ),
+        throwsException,
+      );
+      expect(provider.myPins, isEmpty);
+    });
+  });
+
+  group('退会', () {
+    test('パスワード違いでは何も削除しない', () async {
+      final provider = await makeProvider(
+          pins: [buildPin(id: 'mine', visibleAt: past, isOwn: true)]);
+      await expectLater(provider.deleteAccount(password: 'wrong'),
+          throwsA(isA<AuthException>()));
+      await pumpEventQueue();
+      expect(provider.isAuthenticated, isTrue);
+      expect(provider.myPins.map((p) => p.id), contains('mine'));
+    });
+
+    test('正しいパスワードなら投稿ごと削除してログアウト状態になる', () async {
+      final provider = await makeProvider(
+          pins: [buildPin(id: 'mine', visibleAt: past, isOwn: true)]);
+      await provider.deleteAccount(password: 'password');
+      expect(provider.isAuthenticated, isFalse);
+      expect(provider.myPins, isEmpty);
     });
   });
 
