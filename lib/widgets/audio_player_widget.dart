@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/pin_model.dart';
+import '../theme/app_theme.dart';
 
 /// インラインの音声プレイヤー。再生/一時停止と進捗バーを備える。
 ///
@@ -34,8 +35,9 @@ class AudioPlayerWidget extends StatefulWidget {
       key: key,
       audioUrl: pin.audioUrl,
       isAsset: pin.isAssetAudio,
-      clipStart:
-          pin.trimStartMs == null ? null : Duration(milliseconds: pin.trimStartMs!),
+      clipStart: pin.trimStartMs == null
+          ? null
+          : Duration(milliseconds: pin.trimStartMs!),
       clipEnd:
           pin.trimEndMs == null ? null : Duration(milliseconds: pin.trimEndMs!),
     );
@@ -107,81 +109,102 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   @override
   Widget build(BuildContext context) {
     if (_loadError != null) {
-      return Text(
-        '音声を読み込めませんでした（${widget.audioUrl}）',
-        style: Theme.of(context).textTheme.bodySmall,
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.navyElevated,
+          borderRadius: BorderRadius.circular(AppRadius.field),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.wifi_off_rounded, color: AppColors.textMuted, size: 20),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text('音声を読み込めませんでした。通信環境を確認してください。',
+                  style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+            ),
+          ],
+        ),
       );
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
+    // 再生ボタン＋シークバー＋時間を1行にまとめたコンパクトなプレイヤー。
+    return Row(
       children: [
-        // 再生/一時停止ボタン。
         StreamBuilder<PlayerState>(
           stream: _player.playerStateStream,
           builder: (context, snapshot) {
             final state = snapshot.data;
             final processing = state?.processingState;
             final playing = state?.playing ?? false;
-
-            if (processing == ProcessingState.loading ||
-                processing == ProcessingState.buffering) {
-              return const SizedBox(
-                height: 48,
-                width: 48,
-                child: Padding(
-                  padding: EdgeInsets.all(8),
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              );
-            }
-
+            final loading = processing == ProcessingState.loading ||
+                processing == ProcessingState.buffering;
             final completed = processing == ProcessingState.completed;
-            return IconButton.filled(
-              iconSize: 32,
-              icon: Icon(
-                completed
-                    ? Icons.replay
-                    : (playing ? Icons.pause : Icons.play_arrow),
-              ),
+            return _PlayButton(
+              loading: loading && !playing,
+              icon: completed
+                  ? Icons.replay_rounded
+                  : (playing ? Icons.pause_rounded : Icons.play_arrow_rounded),
+              tooltip: playing ? '一時停止' : '再生',
               onPressed: _togglePlay,
             );
           },
         ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: StreamBuilder<Duration>(
+            stream: _player.positionStream,
+            builder: (context, snapshot) {
+              final position = snapshot.data ?? Duration.zero;
+              final total = _player.duration ?? Duration.zero;
+              final maxMs = total.inMilliseconds.toDouble();
+              final value = maxMs == 0
+                  ? 0.0
+                  : position.inMilliseconds.clamp(0, maxMs).toDouble();
+              const timeStyle = TextStyle(
+                fontSize: 12,
+                color: AppColors.textMuted,
+                fontFeatures: [FontFeature.tabularFigures()],
+              );
 
-        // 進捗バー＋経過/総時間。
-        StreamBuilder<Duration>(
-          stream: _player.positionStream,
-          builder: (context, snapshot) {
-            final position = snapshot.data ?? Duration.zero;
-            final total = _player.duration ?? Duration.zero;
-            final maxMs = total.inMilliseconds.toDouble();
-            final value =
-                maxMs == 0 ? 0.0 : position.inMilliseconds.clamp(0, maxMs).toDouble();
-
-            return Column(
-              children: [
-                Slider(
-                  min: 0,
-                  max: maxMs == 0 ? 1 : maxMs,
-                  value: maxMs == 0 ? 0 : value,
-                  onChanged: maxMs == 0
-                      ? null
-                      : (v) => _player.seek(Duration(milliseconds: v.round())),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(_format(position)),
-                      Text(_format(total)),
-                    ],
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 4,
+                      activeTrackColor: AppColors.pink,
+                      inactiveTrackColor: AppColors.navyElevated,
+                      thumbColor: Colors.white,
+                      overlayColor: AppColors.pink.withValues(alpha: 0.16),
+                      thumbShape:
+                          const RoundSliderThumbShape(enabledThumbRadius: 7),
+                      trackShape: const RoundedRectSliderTrackShape(),
+                    ),
+                    child: Slider(
+                      min: 0,
+                      max: maxMs == 0 ? 1 : maxMs,
+                      value: maxMs == 0 ? 0 : value,
+                      onChanged: maxMs == 0
+                          ? null
+                          : (v) =>
+                              _player.seek(Duration(milliseconds: v.round())),
+                    ),
                   ),
-                ),
-              ],
-            );
-          },
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 22),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(_format(position), style: timeStyle),
+                        Text(_format(total), style: timeStyle),
+                      ],
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ],
     );
@@ -190,5 +213,55 @@ class _AudioPlayerWidgetState extends State<AudioPlayerWidget> {
   String _format(Duration d) {
     String two(int n) => n.toString().padLeft(2, '0');
     return '${two(d.inMinutes)}:${two(d.inSeconds % 60)}';
+  }
+}
+
+/// ブランドグラデーションの丸い再生ボタン。
+class _PlayButton extends StatelessWidget {
+  final bool loading;
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  const _PlayButton({
+    required this.loading,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  static const _size = 54.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        type: MaterialType.transparency,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: Ink(
+          width: _size,
+          height: _size,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: AppColors.brand,
+          ),
+          child: InkWell(
+            onTap: loading ? null : onPressed,
+            child: Center(
+              child: loading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.4, color: AppColors.navy),
+                    )
+                  : Icon(icon, size: 30, color: AppColors.navy),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

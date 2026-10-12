@@ -15,9 +15,10 @@ class MapPin extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (Color glyphColor, IconData glyph) = switch (kind) {
-      MarkerKind.locked => (const Color(0xFF6B72C9), AppIcons.locked),
-      MarkerKind.unlocked => (const Color(0xFF2BB3A3), AppIcons.unlocked),
-      MarkerKind.pending => (const Color(0xFFE0922B), AppIcons.pending),
+      // 白丸の上に乗るので、共通の状態色より一段濃いトーンで視認性を確保する。
+      MarkerKind.locked => (const Color(0xFF6C5FD6), AppIcons.locked),
+      MarkerKind.unlocked => (const Color(0xFF1FA38B), AppIcons.unlocked),
+      MarkerKind.pending => (const Color(0xFFD9892B), AppIcons.pending),
     };
     return SizedBox(
       width: size,
@@ -45,7 +46,7 @@ class _PinPainter extends CustomPainter {
 
     // 影
     canvas.drawCircle(Offset(cx, h - 5), r * 0.5,
-        Paint()..color = Colors.black.withOpacity(0.22));
+        Paint()..color = Colors.black.withValues(alpha: 0.22));
 
     final path = Path()
       ..moveTo(tip.dx, tip.dy)
@@ -54,8 +55,7 @@ class _PinPainter extends CustomPainter {
           radius: Radius.circular(r), clockwise: true)
       ..quadraticBezierTo(cc.dx + r * 1.5, cc.dy + r * 0.9, tip.dx, tip.dy)
       ..close();
-    canvas.drawPath(
-        path, Paint()..shader = AppColors.brand.createShader(rect));
+    canvas.drawPath(path, Paint()..shader = AppColors.brand.createShader(rect));
     canvas.drawPath(
       path,
       Paint()

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -16,6 +17,8 @@ import '../widgets/map_pin.dart';
 import '../widgets/mini_waveform.dart';
 import '../widgets/report_sheet.dart';
 import '../widgets/sound_drop_logo.dart';
+import '../widgets/ui_kit.dart';
+import '../widgets/user_avatar.dart';
 import 'accounts_screen.dart';
 import 'auth_screen.dart';
 import 'drop_screen.dart';
@@ -93,8 +96,8 @@ class _MapScreenState extends State<MapScreen> {
       if (!_isFiltered) {
         final reward = provider.consumePendingReward();
         if (reward > 0 && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('🎉 7日連続ログイン達成！ワープチケットを$reward枚プレゼント')));
+          ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('🎉 7日連続ログイン達成！ワープチケットを$reward枚プレゼント')));
         }
       }
     });
@@ -170,7 +173,7 @@ class _MapScreenState extends State<MapScreen> {
               point: loc,
               radius: 50,
               useRadiusInMeter: true,
-              color: AppColors.blue.withOpacity(0.12),
+              color: AppColors.blue.withValues(alpha: 0.12),
               borderColor: AppColors.blue,
               borderStrokeWidth: 1,
             ),
@@ -190,6 +193,7 @@ class _MapScreenState extends State<MapScreen> {
 
   /// ピンタップ時の分岐。
   void _onPinTapped(PinModel pin) {
+    HapticFeedback.selectionClick();
     final provider = context.read<PinProvider>();
 
     if (provider.canPlay(pin)) {
@@ -221,20 +225,41 @@ class _MapScreenState extends State<MapScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const GradientIcon(AppIcons.locked, size: 44),
-              const SizedBox(height: 12),
-              Text(
+              Center(
+                child: Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.locked.withValues(alpha: 0.16),
+                  ),
+                  child: const Center(
+                      child: GradientIcon(AppIcons.locked, size: 30)),
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
                 'このピンはまだ鍵がかかっています',
                 textAlign: TextAlign.center,
-                style: Theme.of(sheetContext).textTheme.titleMedium,
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
-                '現在地から $distanceText（解禁まで残り ${pin.unlockRadiusInMeters.round()}m 圏内へ）',
+                'by ${pin.authorName}',
                 textAlign: TextAlign.center,
-                style: Theme.of(sheetContext).textTheme.bodySmall,
+                style:
+                    const TextStyle(fontSize: 13, color: AppColors.textMuted),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
+              Center(
+                child: AppTag(
+                  label:
+                      '現在地から $distanceText ・ ${pin.unlockRadiusInMeters.round()}m 圏内で解禁',
+                  color: AppColors.blue,
+                  icon: Icons.near_me_rounded,
+                ),
+              ),
+              const SizedBox(height: 22),
 
               // 案① 歩いて近づく
               OutlinedButton.icon(
@@ -299,21 +324,22 @@ class _MapScreenState extends State<MapScreen> {
             const SizedBox(height: 16),
             // β版（課金OFF）では購入導線を出さない。
             if (!AppConfig.enablePurchases)
-              const Text('現在ワープチケットは購入いただけません（準備中）。\n'
+              const Text(
+                  '現在ワープチケットは購入いただけません（準備中）。\n'
                   '50m以内に近づくと解禁できます。',
                   textAlign: TextAlign.center)
             else
-            FilledButton(
-              onPressed: () async {
-                await context.read<PinProvider>().purchaseWarpPack();
-                if (sheetContext.mounted) Navigator.pop(sheetContext);
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('ワープチケットを追加しました')),
-                );
-              },
-              child: Text('3枚パックを購入（$price）'),
-            ),
+              FilledButton(
+                onPressed: () async {
+                  await context.read<PinProvider>().purchaseWarpPack();
+                  if (sheetContext.mounted) Navigator.pop(sheetContext);
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('ワープチケットを追加しました')),
+                  );
+                },
+                child: Text('3枚パックを購入（$price）'),
+              ),
           ],
         ),
       ),
@@ -329,8 +355,7 @@ class _MapScreenState extends State<MapScreen> {
       // Provider の変更（投げ銭額の増加）を即時反映させたいので Consumer で包む。
       builder: (sheetContext) => Consumer<PinProvider>(
         builder: (consumerContext, provider, _) {
-          final pin =
-              provider.allPins.firstWhere((p) => p.id == pinId);
+          final pin = provider.allPins.firstWhere((p) => p.id == pinId);
           return Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
             child: Column(
@@ -339,9 +364,21 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const CircleAvatar(child: Icon(Icons.person)),
-                  title: Text(pin.title.isEmpty ? '無題のドロップ' : pin.title),
-                  subtitle: Text('by ${pin.authorName}'),
+                  leading: UserAvatar(
+                    name: pin.authorName,
+                    imagePath:
+                        provider.accountOf(pin.ownerId)?.avatarPath ?? '',
+                    radius: 22,
+                    ring: true,
+                  ),
+                  title: Text(pin.title.isEmpty ? '無題のドロップ' : pin.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w800)),
+                  subtitle: Text(
+                      'by ${pin.authorName} ・ ${relativeTime(pin.createdAt)}',
+                      style: const TextStyle(color: AppColors.textMuted)),
                   // 他人の投稿のみフォロー操作・通報/ブロックを出す。
                   trailing: provider.isMine(pin)
                       ? null
@@ -366,9 +403,10 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 const SizedBox(height: 8),
 
+                const SizedBox(height: 4),
                 // 録音時の実波形（無ければIDベースの装飾波形）。
                 MiniWaveform(seed: pin.id, data: pin.waveform, height: 44),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
 
                 // 実音声プレイヤー（just_audio）。
                 AudioPlayerWidget.fromPin(pin, key: ValueKey(pin.id)),
@@ -383,8 +421,7 @@ class _MapScreenState extends State<MapScreen> {
                         children: [
                           const GradientIcon(AppIcons.support, size: 18),
                           const SizedBox(width: 6),
-                          Text(
-                              '${pin.totalTipAmount}円 / ${pin.giftCount}件の応援',
+                          Text('${pin.totalTipAmount}円 / ${pin.giftCount}件の応援',
                               style: Theme.of(consumerContext)
                                   .textTheme
                                   .bodyMedium),
@@ -420,8 +457,8 @@ class _MapScreenState extends State<MapScreen> {
       BuildContext sheetContext, PinModel pin, String action) async {
     final provider = context.read<PinProvider>();
     if (action == 'profile') {
-      Navigator.of(context).push(MaterialPageRoute(
-          builder: (_) => ProfileScreen(uid: pin.ownerId)));
+      Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ProfileScreen(uid: pin.ownerId)));
       return;
     }
     if (action == 'follow') {
@@ -552,44 +589,90 @@ class _MapScreenState extends State<MapScreen> {
           // アカウントを探す（フォロー）。
           IconButton(
             tooltip: 'アカウントを探す',
-            icon: const Icon(Icons.person_search),
+            icon: const Icon(Icons.person_search_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const AccountsScreen()),
             ),
           ),
           // マイドロップ／ピン一覧の管理画面へ。
           IconButton(
-            tooltip: 'ピン一覧',
-            icon: const Icon(Icons.list),
+            tooltip: 'ドロップ一覧',
+            icon: const Icon(Icons.library_music_outlined),
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const MyDropsScreen()),
             ),
           ),
           // アカウントメニュー（プロフィール設定・ログアウト）。
           PopupMenuButton<String>(
-            icon: const Icon(Icons.account_circle_outlined),
+            tooltip: 'アカウント',
+            icon: Consumer<PinProvider>(
+              builder: (_, p, __) => UserAvatar(
+                name: p.currentUser?.displayName ?? '',
+                imagePath: p.currentUser?.avatarPath ?? '',
+                radius: 15,
+                ring: true,
+              ),
+            ),
             onSelected: (v) {
               final uid = context.read<PinProvider>().currentUid;
               if (v == 'signout') _signOut();
               if (v == 'myprofile' && uid != null) {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => ProfileScreen(uid: uid)));
+                Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => ProfileScreen(uid: uid)));
               }
               if (v == 'settings') {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const SettingsScreen()));
+                Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()));
               }
             },
             itemBuilder: (_) {
               final u = context.read<PinProvider>().currentUser;
+              Widget row(IconData icon, String label, {Color? color}) => Row(
+                    children: [
+                      Icon(icon, size: 20, color: color ?? AppColors.textMuted),
+                      const SizedBox(width: 12),
+                      Text(label, style: TextStyle(color: color)),
+                    ],
+                  );
               return [
                 PopupMenuItem(
-                    enabled: false,
-                    child: Text('${u?.displayName ?? ''}\n@${u?.username ?? ''}')),
-                const PopupMenuItem(
-                    value: 'myprofile', child: Text('マイプロフィール')),
-                const PopupMenuItem(value: 'settings', child: Text('設定')),
-                const PopupMenuItem(value: 'signout', child: Text('ログアウト')),
+                  value: 'myprofile',
+                  child: Row(
+                    children: [
+                      UserAvatar(
+                          name: u?.displayName ?? '',
+                          imagePath: u?.avatarPath ?? '',
+                          radius: 18,
+                          ring: true),
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(u?.displayName ?? '',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w700)),
+                            Text('@${u?.username ?? ''}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 12, color: AppColors.textMuted)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const PopupMenuDivider(),
+                PopupMenuItem(
+                    value: 'myprofile',
+                    child: row(Icons.person_outline, 'マイプロフィール')),
+                PopupMenuItem(
+                    value: 'settings',
+                    child: row(Icons.settings_outlined, '設定')),
+                PopupMenuItem(
+                    value: 'signout',
+                    child: row(Icons.logout, 'ログアウト', color: AppColors.danger)),
               ];
             },
           ),
@@ -605,26 +688,38 @@ class _MapScreenState extends State<MapScreen> {
         builder: (context, provider, _) {
           // 永続データの読込中はロゴ付きローダー。
           if (!provider.isLoaded) {
-            return const Center(child: SoundDropLogo(size: 96));
+            return const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SoundDropLogo(size: 96),
+                  SizedBox(height: 20),
+                  SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                ],
+              ),
+            );
           }
-          return Column(
+          return Stack(
             children: [
-              _LocationBanner(status: provider.locationStatus),
-              Expanded(
-                child: Stack(
-                  children: [
-                    (widget.mapViewBuilder ?? _defaultMapView)(
-                      context,
-                      _buildMarkers(provider),
-                      _controller,
-                      provider.locationStatus == LocationStatus.granted,
-                    ),
-                    // フィードが空（フォロー先が無い/未公開のみ）のときの誘導。
-                    // 絞り込み表示（特定ユーザーのドロップ）には出さない。
-                    if (!_isFiltered && provider.visiblePins.isEmpty)
-                      const _EmptyFeedHint(),
-                  ],
-                ),
+              (widget.mapViewBuilder ?? _defaultMapView)(
+                context,
+                _buildMarkers(provider),
+                _controller,
+                provider.locationStatus == LocationStatus.granted,
+              ),
+              // フィードが空（フォロー先が無い/未公開のみ）のときの誘導。
+              // 絞り込み表示（特定ユーザーのドロップ）には出さない。
+              if (!_isFiltered && provider.visiblePins.isEmpty)
+                const _EmptyFeedHint(),
+              Positioned(
+                left: 12,
+                right: 12,
+                top: 8,
+                child: _LocationBanner(status: provider.locationStatus),
               ),
             ],
           );
@@ -640,6 +735,7 @@ class _MapScreenState extends State<MapScreen> {
             backgroundColor: AppColors.navyElevated,
             child: const GradientIcon(AppIcons.myLocation, size: 22),
             onPressed: () async {
+              HapticFeedback.selectionClick();
               final provider = context.read<PinProvider>();
               await provider.updateCurrentLocation();
               final loc = provider.currentLatLng;
@@ -651,10 +747,11 @@ class _MapScreenState extends State<MapScreen> {
           // ドロップ投稿は自分のホーム地図でのみ（絞り込み表示では出さない）。
           if (!_isFiltered) ...[
             const SizedBox(height: 12),
-            _GradientPillButton(
-              icon: AppIcons.drop,
+            GradientButton(
+              icon: const Icon(AppIcons.drop),
               label: 'ドロップ',
-              onTap: _openDropScreen,
+              height: 56,
+              onPressed: _openDropScreen,
             ),
           ],
         ],
@@ -714,7 +811,9 @@ class _MeDot extends StatelessWidget {
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 3),
         boxShadow: [
-          BoxShadow(color: const Color(0xFF5B8DEF).withOpacity(0.4), blurRadius: 6),
+          BoxShadow(
+              color: const Color(0xFF5B8DEF).withValues(alpha: 0.4),
+              blurRadius: 6),
         ],
       ),
     );
@@ -730,28 +829,36 @@ class _EmptyFeedHint extends StatelessWidget {
     return Center(
       child: Container(
         margin: const EdgeInsets.all(24),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+        constraints: const BoxConstraints(maxWidth: 400),
         decoration: BoxDecoration(
-          color: AppColors.navySurface.withOpacity(0.95),
-          borderRadius: BorderRadius.circular(16),
+          color: AppColors.navySurface.withValues(alpha: 0.96),
+          borderRadius: BorderRadius.circular(AppRadius.sheet),
+          border: Border.all(color: AppColors.outline),
+          boxShadow: const [
+            BoxShadow(
+                color: Colors.black38, blurRadius: 24, offset: Offset(0, 8)),
+          ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.person_search, size: 40, color: AppColors.pink),
-            const SizedBox(height: 12),
+            const GradientIcon(Icons.person_search_rounded, size: 44),
+            const SizedBox(height: 14),
             const Text('フォロー中のドロップがありません',
-                style: TextStyle(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
+                textAlign: TextAlign.center,
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            const SizedBox(height: 8),
             const Text(
-              'アカウントをフォローすると、その人の公開ドロップが地図に表示されます。',
+              'アカウントをフォローすると、\nその人の公開ドロップが地図に表示されます。',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12),
+              style: TextStyle(
+                  fontSize: 13, height: 1.6, color: AppColors.textMuted),
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              icon: const Icon(Icons.person_add_alt),
-              label: const Text('アカウントを探す'),
+            const SizedBox(height: 20),
+            GradientButton(
+              icon: const Icon(Icons.person_add_alt_rounded),
+              label: 'アカウントを探す',
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const AccountsScreen()),
               ),
@@ -789,13 +896,19 @@ class _LocationBanner extends StatelessWidget {
 
     return Material(
       color: AppColors.navyElevated,
+      elevation: 6,
+      shadowColor: Colors.black54,
+      borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
         child: Row(
           children: [
-            const Icon(Icons.location_off, color: AppColors.pink, size: 20),
-            const SizedBox(width: 8),
-            Expanded(child: Text(msg, style: const TextStyle(fontSize: 13))),
+            const Icon(Icons.location_off_rounded,
+                color: AppColors.pink, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+                child: Text(msg,
+                    style: const TextStyle(fontSize: 13, height: 1.4))),
             TextButton(
               onPressed: () {
                 if (status == LocationStatus.denied) {
@@ -807,59 +920,6 @@ class _LocationBanner extends StatelessWidget {
               child: Text(action),
             ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-/// ブランドグラデーションのピル型ボタン。
-class _GradientPillButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _GradientPillButton({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: onTap,
-        child: Ink(
-          decoration: BoxDecoration(
-            gradient: AppColors.brand,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.blue.withOpacity(0.4),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, color: AppColors.navy),
-                const SizedBox(width: 8),
-                Text(label,
-                    style: const TextStyle(
-                        color: AppColors.navy,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15)),
-              ],
-            ),
-          ),
         ),
       ),
     );

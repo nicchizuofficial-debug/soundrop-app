@@ -11,6 +11,8 @@ import 'blocked_accounts_screen.dart';
 import 'creator_earnings_screen.dart';
 import 'legal_screen.dart';
 import 'profile_settings_screen.dart';
+import '../widgets/ui_kit.dart';
+import '../widgets/user_avatar.dart';
 
 /// 設定画面（X等を参考にしたプライバシー・安全設定）。
 class SettingsScreen extends StatelessWidget {
@@ -26,148 +28,201 @@ class SettingsScreen extends StatelessWidget {
           final user = provider.currentUser;
 
           return ListView(
+            padding: const EdgeInsets.only(top: 8, bottom: 32),
             children: [
-              _header('アカウント'),
-              ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: const Text('プロフィール'),
-                subtitle: Text('@${user?.username ?? ''}・${user?.email ?? ''}'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const ProfileSettingsScreen())),
+              // ---- アカウント（プロフィールへの入口をカード化） ----
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+                child: Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.fromLTRB(16, 10, 12, 10),
+                    leading: UserAvatar(
+                      name: user?.displayName ?? '',
+                      imagePath: user?.avatarPath ?? '',
+                      radius: 24,
+                      ring: true,
+                    ),
+                    title: Text(user?.displayName ?? '',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 16)),
+                    subtitle: Text('@${user?.username ?? ''}',
+                        style: const TextStyle(color: AppColors.textMuted)),
+                    trailing: const Text('編集',
+                        style: TextStyle(
+                            color: AppColors.blue,
+                            fontWeight: FontWeight.w700)),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ProfileSettingsScreen())),
+                  ),
+                ),
               ),
-              ListTile(
-                leading: const Icon(Icons.local_fire_department_outlined),
-                title: const Text('連続ログイン'),
-                subtitle: const Text('7日ごとにワープチケット\n1枚プレゼント'),
-                trailing: Text('${provider.loginStreak}日',
-                    style: Theme.of(context).textTheme.titleMedium),
+
+              SectionCard(
+                title: 'アカウント',
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.local_fire_department_outlined),
+                    title: const Text('連続ログイン'),
+                    subtitle: const Text('7日続けるとワープチケット1枚'),
+                    trailing: AppTag(
+                        label: '${provider.loginStreak}日',
+                        color: AppColors.pending),
+                  ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.lock_outline),
+                    title: const Text('非公開アカウント'),
+                    subtitle: const Text('フォローを承認制にする'),
+                    value: p.protectedAccount,
+                    onChanged: (v) =>
+                        provider.updatePrivacy(p.copyWith(protectedAccount: v)),
+                  ),
+                ],
               ),
-              SwitchListTile(
-                secondary: const Icon(Icons.lock_outline),
-                title: const Text('非公開アカウント'),
-                subtitle: const Text('フォローを承認制にする'),
-                value: p.protectedAccount,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(protectedAccount: v)),
+
+              SectionCard(
+                title: 'ドロップの公開範囲',
+                children: [
+                  _RadioRow<DropVisibility>(
+                    icon: Icons.groups_outlined,
+                    title: 'フォロワーに公開',
+                    value: DropVisibility.followers,
+                    group: p.visibility,
+                    onChanged: (v) =>
+                        provider.updatePrivacy(p.copyWith(visibility: v)),
+                  ),
+                  _RadioRow<DropVisibility>(
+                    icon: Icons.sync_alt_rounded,
+                    title: '相互フォローのみ',
+                    value: DropVisibility.mutual,
+                    group: p.visibility,
+                    onChanged: (v) =>
+                        provider.updatePrivacy(p.copyWith(visibility: v)),
+                  ),
+                ],
               ),
-              _header('プライバシーと安全'),
-              ListTile(
-                leading: const Icon(Icons.block),
-                title: const Text('ブロックしたアカウント'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
+
+              SectionCard(
+                title: '位置情報（防犯）',
+                children: [
+                  _RadioRow<LocationPrecision>(
+                    icon: Icons.my_location_rounded,
+                    title: '正確な位置',
+                    subtitle: '現地でぴったり解禁できる',
+                    value: LocationPrecision.exact,
+                    group: p.locationPrecision,
+                    onChanged: (v) => provider
+                        .updatePrivacy(p.copyWith(locationPrecision: v)),
+                  ),
+                  _RadioRow<LocationPrecision>(
+                    icon: Icons.blur_on_rounded,
+                    title: 'おおよその位置',
+                    subtitle: '約100mぼかして自宅の特定を防ぐ',
+                    value: LocationPrecision.approximate,
+                    group: p.locationPrecision,
+                    onChanged: (v) => provider
+                        .updatePrivacy(p.copyWith(locationPrecision: v)),
+                  ),
+                ],
+              ),
+
+              SectionCard(
+                title: 'プライバシーと安全',
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.alternate_email),
+                    title: const Text('ユーザー名で検索を許可'),
+                    value: p.findableByUsername,
+                    onChanged: (v) => provider
+                        .updatePrivacy(p.copyWith(findableByUsername: v)),
+                  ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.mail_outline),
+                    title: const Text('メールアドレスで検索を許可'),
+                    value: p.findableByEmail,
+                    onChanged: (v) =>
+                        provider.updatePrivacy(p.copyWith(findableByEmail: v)),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.block),
+                    title: const Text('ブロックしたアカウント'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('${provider.blockedAccounts.length}',
+                            style: const TextStyle(color: AppColors.textMuted)),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.textMuted),
+                      ],
+                    ),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const BlockedAccountsScreen())),
+                  ),
+                ],
+              ),
+
+              if (AppConfig.enableTipping)
+                SectionCard(
+                  title: 'クリエイター',
                   children: [
-                    Text('${provider.blockedAccounts.length}',
-                        style: Theme.of(context).textTheme.bodySmall),
-                    const Icon(Icons.chevron_right),
+                    ListTile(
+                      leading: const Icon(Icons.payments_outlined),
+                      title: const Text('収益・受け取り'),
+                      subtitle: const Text('応援の総額・受け取り見込み・出金設定'),
+                      trailing: const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.textMuted),
+                      onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const CreatorEarningsScreen())),
+                    ),
                   ],
                 ),
-                onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) => const BlockedAccountsScreen())),
+
+              SectionCard(
+                title: '情報',
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.description_outlined),
+                    title: const Text('利用規約'),
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textMuted),
+                    onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => LegalScreen.terms())),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip_outlined),
+                    title: const Text('プライバシーポリシー'),
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textMuted),
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => LegalScreen.privacy())),
+                  ),
+                ],
               ),
-              const _SubHeader('ドロップの公開範囲'),
-              RadioListTile<DropVisibility>(
-                title: const Text('フォロワーに公開'),
-                value: DropVisibility.followers,
-                groupValue: p.visibility,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(visibility: v)),
+
+              SectionCard(
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: AppColors.danger),
+                    title: const Text('ログアウト',
+                        style: TextStyle(color: AppColors.danger)),
+                    onTap: () => _logout(context),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.delete_forever_outlined,
+                        color: AppColors.danger),
+                    title: const Text('アカウントを削除',
+                        style: TextStyle(color: AppColors.danger)),
+                    subtitle: const Text('投稿・フォロー等のデータを完全に削除します'),
+                    onTap: () => _deleteAccount(context),
+                  ),
+                ],
               ),
-              RadioListTile<DropVisibility>(
-                title: const Text('相互フォローのみ'),
-                value: DropVisibility.mutual,
-                groupValue: p.visibility,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(visibility: v)),
-              ),
-              const _SubHeader('見つけやすさ'),
-              SwitchListTile(
-                title: const Text('ユーザー名で検索を許可'),
-                value: p.findableByUsername,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(findableByUsername: v)),
-              ),
-              SwitchListTile(
-                title: const Text('メールアドレスで検索を許可'),
-                value: p.findableByEmail,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(findableByEmail: v)),
-              ),
-              const _SubHeader('位置情報（防犯）'),
-              RadioListTile<LocationPrecision>(
-                title: const Text('正確な位置'),
-                subtitle: const Text('現地でぴったり解禁できる'),
-                value: LocationPrecision.exact,
-                groupValue: p.locationPrecision,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(locationPrecision: v)),
-              ),
-              RadioListTile<LocationPrecision>(
-                title: const Text('おおよその位置（約100mぼかし）'),
-                subtitle: const Text('自宅などの特定を防ぐ'),
-                value: LocationPrecision.approximate,
-                groupValue: p.locationPrecision,
-                onChanged: (v) =>
-                    provider.updatePrivacy(p.copyWith(locationPrecision: v)),
-              ),
-              if (AppConfig.enableTipping) ...[
-                _header('クリエイター'),
-                ListTile(
-                  leading: const Icon(Icons.payments_outlined),
-                  title: const Text('収益・受け取り'),
-                  subtitle: const Text('応援の総額・受け取り見込み・出金設定'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const CreatorEarningsScreen())),
-                ),
-              ],
-              _header('情報'),
-              ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: const Text('利用規約'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => LegalScreen.terms())),
-              ),
-              ListTile(
-                leading: const Icon(Icons.privacy_tip_outlined),
-                title: const Text('プライバシーポリシー'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(builder: (_) => LegalScreen.privacy())),
-              ),
-              _header('その他'),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.redAccent),
-                title: const Text('ログアウト',
-                    style: TextStyle(color: Colors.redAccent)),
-                onTap: () => _logout(context),
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.delete_forever, color: Colors.redAccent),
-                title: const Text('アカウントを削除',
-                    style: TextStyle(color: Colors.redAccent)),
-                subtitle: const Text('投稿・フォロー等のデータを\n完全に削除します'),
-                onTap: () => _deleteAccount(context),
-              ),
-              const SizedBox(height: 24),
             ],
           );
         },
       ),
     );
   }
-
-  Widget _header(String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 6),
-        child: Text(text,
-            style: const TextStyle(
-                color: AppColors.pink,
-                fontWeight: FontWeight.w700,
-                fontSize: 13)),
-      );
 
   Future<void> _logout(BuildContext context) async {
     await context.read<PinProvider>().signOut();
@@ -273,12 +328,40 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   }
 }
 
-class _SubHeader extends StatelessWidget {
-  final String text;
-  const _SubHeader(this.text);
+/// アイコン付きのラジオ行（SectionCard 内で ListTile と揃える）。
+class _RadioRow<T> extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final T value;
+  final T group;
+  final ValueChanged<T?> onChanged;
+
+  const _RadioRow({
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    required this.group,
+    required this.onChanged,
+  });
+
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
-        child: Text(text, style: Theme.of(context).textTheme.bodySmall),
-      );
+  Widget build(BuildContext context) {
+    final selected = value == group;
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle!),
+      trailing: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 150),
+        child: selected
+            ? const Icon(Icons.check_circle_rounded,
+                key: ValueKey(true), color: AppColors.blue)
+            : const Icon(Icons.circle_outlined,
+                key: ValueKey(false), color: AppColors.outline),
+      ),
+      onTap: () => onChanged(value),
+    );
+  }
 }

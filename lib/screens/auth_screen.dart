@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../models/app_user.dart';
@@ -24,6 +25,7 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLogin = false; // false=新規登録, true=ログイン
   bool _busy = false;
   bool _agreed = false; // 規約・プライバシー同意（新規登録時必須）
+  bool _obscure = true; // パスワードの伏せ字表示
   String? _error;
 
   final ButtonStyle _denseBtn = TextButton.styleFrom(
@@ -33,6 +35,7 @@ class _AuthScreenState extends State<AuthScreen> {
   );
 
   Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
     if (_username.text.trim().isEmpty) {
       setState(() => _error = 'ログインIDを入力してください');
       return;
@@ -42,7 +45,7 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     if (!_isLogin && !_agreed) {
-      setState(() => _error = '利用規約とプライバシーポリシーへの同意が必要です');
+      setState(() => _error = 'ご利用には規約への同意が必要です');
       return;
     }
     setState(() {
@@ -62,6 +65,8 @@ class _AuthScreenState extends State<AuthScreen> {
           email: _email.text,
         );
       }
+      // 成功したID・パスワードをキーチェーン等へ保存するよう OS に伝える。
+      TextInput.finishAutofillContext();
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const MapScreen()),
@@ -109,8 +114,8 @@ class _AuthScreenState extends State<AuthScreen> {
     try {
       await context.read<PinProvider>().sendPasswordReset(username.trim());
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('登録済みのメールアドレスに再設定用メールを送信しました')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('登録済みのメールアドレスに再設定用メールを送信しました')));
     } on AuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -133,172 +138,238 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final muted = Theme.of(context)
+        .textTheme
+        .bodySmall
+        ?.copyWith(color: AppColors.textMuted, height: 1.5);
+
     return Scaffold(
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Center(
-                  child: Image(
-                    image: AssetImage('assets/icon/app_icon_custom.png'),
-                    width: 104,
-                    height: 104,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Center(
-                  child: GradientMask(
-                    child: Text(_isLogin ? 'おかえりなさい' : 'アカウント登録',
-                        style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white)),
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Center(
-                  child: Text(
-                      _isLogin
-                          ? 'ログインID（@なし）とパスワードでログイン'
-                          : 'フォローした人のドロップだけが届きます',
-                      style: Theme.of(context).textTheme.bodySmall),
-                ),
-                const SizedBox(height: 24),
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+            child: ConstrainedBox(
+              // iPad でも入力欄が横に間延びしないよう幅を抑える。
+              constraints: const BoxConstraints(maxWidth: 440),
+              // iOS のキーチェーン／Android の自動入力にID・パスワードを渡す。
+              child: AutofillGroup(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Center(
+                      child: Image(
+                        image: AssetImage('assets/icon/app_icon_custom.png'),
+                        width: 96,
+                        height: 96,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Center(
+                      child: GradientMask(
+                        child: Text(_isLogin ? 'おかえりなさい' : 'はじめまして',
+                            style: const TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white)),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      _isLogin ? 'ログインIDとパスワードでログイン' : 'フォローした人のドロップだけが届きます',
+                      textAlign: TextAlign.center,
+                      style: muted,
+                    ),
+                    const SizedBox(height: 28),
 
-                if (!_isLogin)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: TextField(
-                      controller: _name,
+                    // モード切替は入力欄の上に置き、今どちらの画面かを明確にする。
+                    SegmentedButton<bool>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('新規登録')),
+                        ButtonSegment(value: true, label: Text('ログイン')),
+                      ],
+                      selected: {_isLogin},
+                      onSelectionChanged: _busy
+                          ? null
+                          : (s) => setState(() {
+                                _isLogin = s.first;
+                                _error = null;
+                              }),
+                    ),
+                    const SizedBox(height: 20),
+
+                    if (!_isLogin) ...[
+                      TextField(
+                        controller: _name,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.nickname],
+                        decoration: const InputDecoration(
+                          labelText: '表示名',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    // ログインID（一意）。
+                    TextField(
+                      controller: _username,
                       textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      autofillHints: [
+                        _isLogin
+                            ? AutofillHints.username
+                            : AutofillHints.newUsername
+                      ],
                       decoration: const InputDecoration(
-                        labelText: '表示名',
-                        prefixIcon: Icon(Icons.person_outline),
-                        border: OutlineInputBorder(),
+                        labelText: 'ログインID（例: kenta）',
+                        prefixText: '@',
+                        prefixIcon: Icon(Icons.badge_outlined),
                       ),
                     ),
-                  ),
-                // ログインID（一意）。
-                TextField(
-                  controller: _username,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: 'ログインID（例: kenta）',
-                    prefixText: '@',
-                    prefixIcon: Icon(Icons.alternate_email),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                if (!_isLogin) ...[
-                  TextField(
-                    controller: _email,
-                    keyboardType: TextInputType.emailAddress,
-                    textInputAction: TextInputAction.next,
-                    decoration: const InputDecoration(
-                      labelText: 'メールアドレス（任意）',
-                      prefixIcon: Icon(Icons.mail_outline),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                TextField(
-                  controller: _password,
-                  obscureText: true,
-                  decoration: const InputDecoration(
-                    labelText: 'パスワード（6文字以上）',
-                    prefixIcon: Icon(Icons.lock_outline),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                if (_isLogin)
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      style: _denseBtn,
-                      onPressed: _busy ? null : _showForgotPasswordDialog,
-                      child: const Text('パスワードをお忘れですか？'),
-                    ),
-                  ),
-                if (!_isLogin) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _agreed,
-                        onChanged: (v) =>
-                            setState(() => _agreed = v ?? false),
+                    const SizedBox(height: 12),
+                    if (!_isLogin) ...[
+                      TextField(
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autocorrect: false,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: const InputDecoration(
+                          labelText: 'メールアドレス（任意）',
+                          helperText: 'パスワードを忘れたときの再設定に使います',
+                          prefixIcon: Icon(Icons.mail_outline),
+                        ),
                       ),
-                      Expanded(
-                        child: Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                      const SizedBox(height: 12),
+                    ],
+                    TextField(
+                      controller: _password,
+                      obscureText: _obscure,
+                      textInputAction: TextInputAction.done,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      autofillHints: [
+                        _isLogin
+                            ? AutofillHints.password
+                            : AutofillHints.newPassword
+                      ],
+                      onSubmitted: (_) => _busy ? null : _submit(),
+                      decoration: InputDecoration(
+                        labelText: _isLogin ? 'パスワード' : 'パスワード（6文字以上）',
+                        prefixIcon: const Icon(Icons.lock_outline),
+                        suffixIcon: IconButton(
+                          tooltip: _obscure ? 'パスワードを表示' : 'パスワードを隠す',
+                          icon: Icon(_obscure
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                      ),
+                    ),
+                    if (_isLogin)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _busy ? null : _showForgotPasswordDialog,
+                          child: const Text('パスワードをお忘れですか？'),
+                        ),
+                      ),
+                    if (!_isLogin) ...[
+                      const SizedBox(height: 8),
+                      // 行全体をタップで同意を切り替えられるようにする（チェックボックスが小さいため）。
+                      InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => setState(() => _agreed = !_agreed),
+                        child: Row(
                           children: [
-                            const Text('', style: TextStyle(fontSize: 12)),
-                            TextButton(
-                              style: _denseBtn,
-                              onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                      builder: (_) => LegalScreen.terms())),
-                              child: const Text('利用規約'),
+                            Checkbox(
+                              value: _agreed,
+                              onChanged: (v) =>
+                                  setState(() => _agreed = v ?? false),
                             ),
-                            const Text('・', style: TextStyle(fontSize: 12)),
-                            TextButton(
-                              style: _denseBtn,
-                              onPressed: () => Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                      builder: (_) => LegalScreen.privacy())),
-                              child: const Text('プライバシーポリシー'),
+                            Expanded(
+                              child: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  TextButton(
+                                    style: _denseBtn,
+                                    onPressed: () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                LegalScreen.terms())),
+                                    child: const Text('利用規約'),
+                                  ),
+                                  const Text('・',
+                                      style: TextStyle(fontSize: 13)),
+                                  TextButton(
+                                    style: _denseBtn,
+                                    onPressed: () => Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                            builder: (_) =>
+                                                LegalScreen.privacy())),
+                                    child: const Text('プライバシーポリシー'),
+                                  ),
+                                  const Text('に同意する',
+                                      style: TextStyle(fontSize: 13)),
+                                ],
+                              ),
                             ),
-                            const Text('に同意', style: TextStyle(fontSize: 12)),
                           ],
                         ),
                       ),
                     ],
-                  ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Text(_error!,
-                      style: const TextStyle(color: Colors.redAccent)),
-                ],
-                const SizedBox(height: 20),
-                FilledButton(
-                  onPressed: _busy ? null : _submit,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: _busy
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2))
-                        : Text(_isLogin ? 'ログイン' : '登録して始める'),
-                  ),
+                    AnimatedSize(
+                      duration: const Duration(milliseconds: 180),
+                      child: _error == null
+                          ? const SizedBox(width: double.infinity)
+                          : Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: _ErrorCard(message: _error!),
+                            ),
+                    ),
+                    const SizedBox(height: 24),
+                    GradientButton(
+                      label: _isLogin ? 'ログイン' : '登録して始める',
+                      loading: _busy,
+                      onPressed: _submit,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => setState(() {
-                            _isLogin = !_isLogin;
-                            _error = null;
-                          }),
-                  child: Text(
-                    _isLogin
-                        ? 'アカウントが無い方はこちら\n（新規登録）'
-                        : '既にアカウントをお持ちの方はこちら\n（ログイン）',
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// フォーム下に出すエラー表示（アイコン付きの淡い赤カード）。
+class _ErrorCard extends StatelessWidget {
+  final String message;
+  const _ErrorCard({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.danger.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppRadius.field),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.danger, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(fontSize: 13, height: 1.5)),
+          ),
+        ],
       ),
     );
   }
